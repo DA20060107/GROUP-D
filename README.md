@@ -71,7 +71,7 @@
 3. ブラウザで以下のURLにアクセスします。
 
    ```
-   http://localhost/shift-app/public/index.php
+   http://localhost/(プロジェクトのフォルダ名)/public/index.php
    ```
 
    （フォルダ名は配置場所に合わせて変更してください）
