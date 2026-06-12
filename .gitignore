@@ -1,0 +1,18 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+
+# Temporary files
+tmp/
+temp/
+
+# Uploads
+uploads/
