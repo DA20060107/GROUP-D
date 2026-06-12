@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS employees (
     email       VARCHAR(100) NULL COMMENT 'メールアドレス',
     phone       VARCHAR(20)  NULL COMMENT '電話番号',
     hire_date   DATE         NULL COMMENT '入社日',
+    position    VARCHAR(50)  NULL COMMENT '担当可能業務・ポジション',
+    note        VARCHAR(255) NULL COMMENT '備考',
+    is_active   TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '有効フラグ（0=無効化された従業員）',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -50,6 +53,8 @@ CREATE TABLE IF NOT EXISTS shifts (
     shift_date  DATE NOT NULL COMMENT '勤務日',
     start_time  TIME NOT NULL COMMENT '開始時刻',
     end_time    TIME NOT NULL COMMENT '終了時刻',
+    position    VARCHAR(50) NULL COMMENT '担当業務・ポジション',
+    note        VARCHAR(255) NULL COMMENT '備考',
     status      ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled')
                 NOT NULL DEFAULT 'scheduled' COMMENT 'シフト状態',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -61,7 +66,7 @@ CREATE TABLE IF NOT EXISTS shifts (
 
 -- ------------------------------------------------------------
 -- availability: 勤務可能日・勤務可能時間
--- （勤務可能日は従業員ではなく店長が登録・管理する）
+-- （勤務可能日は従業員本人が登録する。店長は確認のみ行う）
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS availability (
     id              INT AUTO_INCREMENT PRIMARY KEY,
@@ -69,7 +74,8 @@ CREATE TABLE IF NOT EXISTS availability (
     available_date  DATE NOT NULL COMMENT '勤務可能日',
     start_time      TIME NOT NULL COMMENT '勤務可能開始時刻',
     end_time        TIME NOT NULL COMMENT '勤務可能終了時刻',
-    created_by      INT NOT NULL COMMENT '登録した店長（users.id）',
+    note            VARCHAR(255) NULL COMMENT '備考',
+    created_by      INT NOT NULL COMMENT '登録したユーザー（users.id、通常は従業員本人）',
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_availability_employee
@@ -160,3 +166,22 @@ CREATE TABLE IF NOT EXISTS approvals (
         FOREIGN KEY (manager_id) REFERENCES users (id)
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- 既存DBへのカラム追加（マイグレーション）
+--
+-- 上記の CREATE TABLE IF NOT EXISTS は、テーブルが既に存在する環境では
+-- 何も行わないため、既存DBに対しては以下の ALTER TABLE で
+-- 不足しているカラムを追加する。schema.sql を再実行しても安全。
+-- ------------------------------------------------------------
+ALTER TABLE employees
+    ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当可能業務・ポジション' AFTER hire_date,
+    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position,
+    ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '有効フラグ（0=無効化された従業員）' AFTER note;
+
+ALTER TABLE availability
+    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER end_time;
+
+ALTER TABLE shifts
+    ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当業務・ポジション' AFTER end_time,
+    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position;

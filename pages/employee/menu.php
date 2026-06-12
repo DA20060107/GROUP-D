@@ -24,6 +24,7 @@ $user = currentUser();
 
 <ul class="menu-list">
     <li><a href="shifts.php">シフト確認</a></li>
+    <li><a href="availability.php">勤務可能日登録</a></li>
     <li><a href="leave_request.php">休み申請</a></li>
     <li><a href="notifications.php">通知確認</a></li>
     <li><a href="result.php">承認結果確認</a></li>
