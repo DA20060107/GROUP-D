@@ -2,14 +2,42 @@
 /**
  * 承認結果確認画面（従業員用）
  *
- * TODO: approvals テーブルを参照し、自分に関係する承認結果を取得する予定
+ * - ログイン中の従業員本人宛の「承認結果」通知（type = 'approval_result'）を一覧表示する
+ * - 休み申請に関する通知は、関連する休み申請・シフト情報も合わせて表示する
  */
 
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('employee');
+require_once __DIR__ . '/../../app/config/database.php';
 
 $pageTitle = '承認結果確認';
 $basePath  = '../../public/';
+
+$user   = currentUser();
+$userId = (int) $user['id'];
+
+// ------------------------------------------------------------
+// 自分宛の承認結果通知一覧
+// ------------------------------------------------------------
+$stmt = $pdo->prepare(
+    'SELECT n.*, lr.status AS leave_status,
+            s.shift_date, s.start_time, s.end_time, s.position
+     FROM notifications n
+     LEFT JOIN leave_requests lr ON lr.id = n.related_leave_request_id
+     LEFT JOIN shifts s ON s.id = lr.shift_id
+     WHERE n.user_id = :user_id AND n.type = :type
+     ORDER BY n.created_at DESC'
+);
+$stmt->execute(['user_id' => $userId, 'type' => 'approval_result']);
+$results = $stmt->fetchAll();
+
+$leaveStatusLabels = [
+    'pending'      => '受付中',
+    'matching'     => '候補者回答待ち',
+    'no_candidate' => '候補者なし',
+    'approved'     => '承認済み',
+    'rejected'     => '却下',
+];
 
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
@@ -23,21 +51,34 @@ require_once __DIR__ . '/../../app/includes/header.php';
         <thead>
             <tr>
                 <th>日時</th>
-                <th>申請内容</th>
-                <th>結果</th>
+                <th>勤務日</th>
+                <th>開始時刻</th>
+                <th>終了時刻</th>
+                <th>担当業務・ポジション</th>
+                <th>申請状態</th>
+                <th>タイトル</th>
+                <th>内容</th>
             </tr>
         </thead>
         <tbody>
+            <?php if (empty($results)): ?>
             <tr>
-                <td>2026-06-11 18:00</td>
-                <td>2026-06-10 のシフトの休み申請</td>
-                <td>承認</td>
+                <td colspan="8">承認結果はありません。</td>
             </tr>
-            <tr>
-                <td>2026-06-09 12:00</td>
-                <td>2026-06-08 のシフトの代勤対応</td>
-                <td>承認</td>
-            </tr>
+            <?php else: ?>
+                <?php foreach ($results as $r): ?>
+                <tr>
+                    <td><?php echo htmlspecialchars($r['created_at']); ?></td>
+                    <td><?php echo htmlspecialchars($r['shift_date'] ?? '-'); ?></td>
+                    <td><?php echo $r['start_time'] !== null ? htmlspecialchars(substr($r['start_time'], 0, 5)) : '-'; ?></td>
+                    <td><?php echo $r['end_time'] !== null ? htmlspecialchars(substr($r['end_time'], 0, 5)) : '-'; ?></td>
+                    <td><?php echo htmlspecialchars($r['position'] ?? '-'); ?></td>
+                    <td><?php echo htmlspecialchars($leaveStatusLabels[$r['leave_status']] ?? '-'); ?></td>
+                    <td><?php echo htmlspecialchars($r['title']); ?></td>
+                    <td><?php echo nl2br(htmlspecialchars($r['message'])); ?></td>
+                </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
         </tbody>
     </table>
 </div>

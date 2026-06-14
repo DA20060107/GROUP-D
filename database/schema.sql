@@ -94,8 +94,9 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     shift_id    INT NOT NULL COMMENT '休みたいシフト',
     employee_id INT NOT NULL COMMENT '申請した従業員',
     reason      VARCHAR(255) NULL COMMENT '申請理由',
-    status      ENUM('pending', 'matching', 'approved', 'rejected')
-                NOT NULL DEFAULT 'pending' COMMENT '申請状態',
+    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
+                NOT NULL DEFAULT 'pending'
+                COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_leave_requests_shift
@@ -114,7 +115,10 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
     leave_request_id     INT NOT NULL COMMENT '対象の休み申請',
     candidate_employee_id INT NOT NULL COMMENT '代勤候補の従業員',
     status               ENUM('proposed', 'accepted', 'declined', 'expired')
-                         NOT NULL DEFAULT 'proposed' COMMENT '回答状況',
+                         NOT NULL DEFAULT 'proposed' COMMENT '回答状況（proposed=未回答）',
+    match_score          INT NULL COMMENT '候補者の適合度スコア（現在は固定値、将来的にスキル等でスコアリング予定）',
+    match_reason         VARCHAR(255) NULL COMMENT '候補者として抽出された理由',
+    matched_at           DATETIME NULL COMMENT '候補者として抽出された日時',
     responded_at         DATETIME NULL COMMENT '回答日時',
     created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -132,10 +136,11 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
 CREATE TABLE IF NOT EXISTS notifications (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     user_id     INT NOT NULL COMMENT '通知先ユーザー',
-    type        VARCHAR(50) NOT NULL COMMENT '通知種別（leave_request, candidate_offer, approval_result など）',
+    type        VARCHAR(50) NOT NULL COMMENT '通知種別（leave_request, substitute_request, candidate_offer, no_candidate, approval_result など）',
     title       VARCHAR(100) NOT NULL COMMENT '通知タイトル',
     message     TEXT NOT NULL COMMENT '通知内容',
     is_read     TINYINT(1) NOT NULL DEFAULT 0 COMMENT '既読フラグ',
+    related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_notifications_user
@@ -185,3 +190,19 @@ ALTER TABLE availability
 ALTER TABLE shifts
     ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当業務・ポジション' AFTER end_time,
     ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position;
+
+-- ------------------------------------------------------------
+-- 代勤候補抽出・通知作成機能のためのカラム追加（マイグレーション）
+-- ------------------------------------------------------------
+ALTER TABLE substitute_candidates
+    ADD COLUMN IF NOT EXISTS match_score INT NULL COMMENT '候補者の適合度スコア（現在は固定値、将来的にスキル等でスコアリング予定）' AFTER status,
+    ADD COLUMN IF NOT EXISTS match_reason VARCHAR(255) NULL COMMENT '候補者として抽出された理由' AFTER match_score,
+    ADD COLUMN IF NOT EXISTS matched_at DATETIME NULL COMMENT '候補者として抽出された日時' AFTER match_reason;
+
+ALTER TABLE notifications
+    ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
+
+ALTER TABLE leave_requests
+    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
+        NOT NULL DEFAULT 'pending'
+        COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）';

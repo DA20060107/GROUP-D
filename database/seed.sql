@@ -50,6 +50,7 @@ INSERT INTO availability (employee_id, available_date, start_time, end_time, not
     (1, '2026-06-14', '17:00:00', '22:00:00', NULL, 2),
     (2, '2026-06-15', '17:00:00', '22:00:00', NULL, 3),
     (3, '2026-06-15', '17:00:00', '23:00:00', NULL, 4),
+    (3, '2026-06-14', '17:00:00', '22:00:00', NULL, 4),
     (4, '2026-06-16', '17:00:00', '22:00:00', NULL, 5),
     (5, '2026-06-18', '18:00:00', '23:00:00', NULL, 6);
 
@@ -62,14 +63,14 @@ INSERT INTO leave_requests (id, shift_id, employee_id, reason, status) VALUES
 -- ------------------------------------------------------------
 -- substitute_candidates: サンプル代勤候補（鈴木さんが候補）
 -- ------------------------------------------------------------
-INSERT INTO substitute_candidates (leave_request_id, candidate_employee_id, status, responded_at) VALUES
-    (1, 3, 'accepted', '2026-06-12 10:30:00');
+INSERT INTO substitute_candidates (leave_request_id, candidate_employee_id, status, match_score, match_reason, matched_at, responded_at) VALUES
+    (1, 3, 'accepted', 100, '勤務可能日・時間が一致', '2026-06-12 09:00:00', '2026-06-12 10:30:00');
 
 -- ------------------------------------------------------------
 -- notifications: サンプル通知
 -- ------------------------------------------------------------
-INSERT INTO notifications (user_id, type, title, message, is_read) VALUES
-    (1, 'leave_request',  '休み申請', '佐藤 花子さんから 2026-06-15 のシフトの休み申請がありました。', 0),
-    (1, 'candidate_offer', '代勤回答', '鈴木 次郎さんが代勤を「対応可能」で回答しました。', 1),
-    (4, 'candidate_offer', '代勤候補のお知らせ', '2026-06-15 17:00-22:00 のシフトの代勤候補に選ばれました。', 0),
-    (3, 'approval_result', '承認結果', '2026-06-10 のシフトの休み申請が承認されました。', 1);
+INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id) VALUES
+    (1, 'leave_request',  '休み申請', '佐藤 花子さんから 2026-06-15 のシフトの休み申請がありました。', 0, 1),
+    (1, 'candidate_offer', '代勤回答', '鈴木 次郎さんが代勤を「対応可能」で回答しました。', 1, 1),
+    (4, 'candidate_offer', '代勤候補のお知らせ', '2026-06-15 17:00-22:00 のシフトの代勤候補に選ばれました。', 0, 1),
+    (3, 'approval_result', '承認結果', '2026-06-10 のシフトの休み申請が承認されました。', 1, NULL);
