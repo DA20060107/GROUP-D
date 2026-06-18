@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('employee');
 require_once __DIR__ . '/../../app/config/database.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '承認結果確認';
 $basePath  = '../../public/';
@@ -30,14 +31,6 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute(['user_id' => $userId, 'type' => 'approval_result']);
 $results = $stmt->fetchAll();
-
-$leaveStatusLabels = [
-    'pending'      => '受付中',
-    'matching'     => '候補者回答待ち',
-    'no_candidate' => '候補者なし',
-    'approved'     => '承認済み',
-    'rejected'     => '却下',
-];
 
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
@@ -73,7 +66,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <td><?php echo $r['start_time'] !== null ? htmlspecialchars(substr($r['start_time'], 0, 5)) : '-'; ?></td>
                     <td><?php echo $r['end_time'] !== null ? htmlspecialchars(substr($r['end_time'], 0, 5)) : '-'; ?></td>
                     <td><?php echo htmlspecialchars($r['position'] ?? '-'); ?></td>
-                    <td><?php echo htmlspecialchars($leaveStatusLabels[$r['leave_status']] ?? '-'); ?></td>
+                    <td><?php echo $r['leave_status'] !== null ? renderStatusBadge(leaveRequestStatusLabel($r['leave_status']), leaveRequestStatusBadgeClass($r['leave_status'])) : '-'; ?></td>
                     <td><?php echo htmlspecialchars($r['title']); ?></td>
                     <td><?php echo nl2br(htmlspecialchars($r['message'])); ?></td>
                 </tr>

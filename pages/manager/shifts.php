@@ -12,6 +12,7 @@
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('manager');
 require_once __DIR__ . '/../../app/config/database.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = 'シフト作成・一覧確認';
 $basePath  = '../../public/';
@@ -129,13 +130,6 @@ $shifts = $pdo->query(
      ORDER BY s.shift_date, s.start_time"
 )->fetchAll();
 
-$statusLabels = [
-    'scheduled'        => '予定',
-    'leave_requested'  => '休み申請中',
-    'substituted'      => '代勤対応済み',
-    'cancelled'        => '無効化済み',
-];
-
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
@@ -218,7 +212,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <td><?php echo htmlspecialchars($shift['employee_name']); ?></td>
                     <td><?php echo htmlspecialchars($shift['position'] ?? ''); ?></td>
                     <td><?php echo htmlspecialchars($shift['note'] ?? ''); ?></td>
-                    <td><?php echo htmlspecialchars($statusLabels[$shift['status']] ?? $shift['status']); ?></td>
+                    <td><?php echo renderStatusBadge(shiftStatusLabel($shift['status']), shiftStatusBadgeClass($shift['status'])); ?></td>
                     <td>
                         <form method="post" action="shifts.php">
                             <input type="hidden" name="action" value="cancel_shift">

@@ -21,6 +21,7 @@ require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('manager');
 require_once __DIR__ . '/../../app/config/database.php';
 require_once __DIR__ . '/../../app/services/substitute_matcher.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '承認';
 $basePath  = '../../public/';
@@ -222,20 +223,6 @@ $processedLeaveRequests = $pdo->query(
      ORDER BY a.approved_at DESC, lr.id DESC"
 )->fetchAll();
 
-$candidateStatusLabels = [
-    'proposed' => '未回答',
-    'accepted' => '代勤可能と回答済み',
-    'declined' => '代勤不可と回答済み',
-    'expired'  => '期限切れ',
-];
-
-$leaveStatusLabels = [
-    'matching'     => '候補者回答待ち',
-    'no_candidate' => '候補者なし',
-    'approved'     => '承認済み',
-    'rejected'     => '却下',
-];
-
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
@@ -281,7 +268,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     </tr>
                     <tr>
                         <th>状態</th>
-                        <td><?php echo htmlspecialchars($leaveStatusLabels[$lr['leave_status']] ?? $lr['leave_status']); ?></td>
+                        <td><?php echo renderStatusBadge(leaveRequestStatusLabel($lr['leave_status']), leaveRequestStatusBadgeClass($lr['leave_status'])); ?></td>
                     </tr>
                 </tbody>
             </table>
@@ -303,9 +290,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <tr>
                         <td><?php echo htmlspecialchars($candidate['candidate_name']); ?></td>
                         <td>
-                            <span class="badge <?php echo $candidate['status'] === 'accepted' ? 'badge-active' : 'badge-inactive'; ?>">
-                                <?php echo htmlspecialchars($candidateStatusLabels[$candidate['status']] ?? $candidate['status']); ?>
-                            </span>
+                            <?php echo renderStatusBadge(candidateStatusLabel($candidate['status']), candidateStatusBadgeClass($candidate['status'])); ?>
                         </td>
                         <td><?php echo htmlspecialchars($candidate['match_reason'] ?? ''); ?></td>
                         <td>
@@ -364,7 +349,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             （<?php echo htmlspecialchars($lr['position']); ?>）
                         <?php endif; ?>
                     </td>
-                    <td><?php echo htmlspecialchars($leaveStatusLabels[$lr['leave_status']] ?? $lr['leave_status']); ?></td>
+                    <td><?php echo renderStatusBadge(leaveRequestStatusLabel($lr['leave_status']), leaveRequestStatusBadgeClass($lr['leave_status'])); ?></td>
                     <td><?php echo htmlspecialchars($lr['substitute_name'] ?? '-'); ?></td>
                 </tr>
                 <?php endforeach; ?>

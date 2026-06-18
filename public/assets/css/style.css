@@ -238,6 +238,22 @@ th {
     color: #757575;
 }
 
+/* 状態バッジ（色バリエーション） */
+.badge-success {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+}
+
+.badge-warning {
+    background-color: #fff8e1;
+    color: #f57f17;
+}
+
+.badge-danger {
+    background-color: #ffebee;
+    color: #c62828;
+}
+
 /* テーブル内の小さいフォーム・ボタンを横並びにする */
 .table-actions {
     display: flex;

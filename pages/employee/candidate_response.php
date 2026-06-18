@@ -12,6 +12,7 @@ require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('employee');
 require_once __DIR__ . '/../../app/config/database.php';
 require_once __DIR__ . '/../../app/services/substitute_matcher.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '代勤提案への応答';
 $basePath  = '../../public/';
@@ -107,13 +108,6 @@ if ($candidateId > 0) {
     $candidate = $stmt->fetch();
 }
 
-$responseStatusLabels = [
-    'proposed' => '未回答',
-    'accepted' => '代勤可能と回答済み',
-    'declined' => '代勤不可と回答済み',
-    'expired'  => '期限切れ',
-];
-
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
@@ -168,7 +162,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
             <?php endif; ?>
             <tr>
                 <th>回答状況</th>
-                <td><?php echo htmlspecialchars($responseStatusLabels[$candidate['status']] ?? $candidate['status']); ?></td>
+                <td><?php echo renderStatusBadge(candidateStatusLabel($candidate['status']), candidateStatusBadgeClass($candidate['status'])); ?></td>
             </tr>
         </tbody>
     </table>

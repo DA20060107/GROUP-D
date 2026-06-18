@@ -6,11 +6,13 @@
  * - 代勤依頼（substitute_request）通知には、本人の代勤提案への応答画面
  *   （candidate_response.php）へのリンクを表示する
  * - 回答済みの代勤提案は、リンクの代わりに回答状況（代勤可能／代勤不可）を表示する
+ * - 承認結果（approval_result）通知には、承認結果確認画面（result.php）へのリンクを表示する
  */
 
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('employee');
 require_once __DIR__ . '/../../app/config/database.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '通知確認';
 $basePath  = '../../public/';
@@ -51,22 +53,6 @@ $stmt = $pdo->prepare(
 $stmt->execute(['user_id' => $userId, 'employee_id' => $employeeId]);
 $notifications = $stmt->fetchAll();
 
-$typeLabels = [
-    'leave_request'      => '休み申請',
-    'substitute_request' => '代勤依頼',
-    'candidate_offer'    => '代勤回答',
-    'candidate_available' => '代勤可能回答',
-    'no_candidate'       => '候補者なし',
-    'approval_result'    => '承認結果',
-];
-
-$candidateStatusLabels = [
-    'proposed' => '未回答',
-    'accepted' => '代勤可能と回答済み',
-    'declined' => '代勤不可と回答済み',
-    'expired'  => '期限切れ',
-];
-
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
@@ -95,21 +81,22 @@ require_once __DIR__ . '/../../app/includes/header.php';
                 <?php foreach ($notifications as $n): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($n['created_at']); ?></td>
-                    <td><?php echo htmlspecialchars($typeLabels[$n['type']] ?? $n['type']); ?></td>
+                    <td><?php echo htmlspecialchars(notificationTypeLabel($n['type'])); ?></td>
                     <td><?php echo htmlspecialchars($n['title']); ?></td>
                     <td>
                         <?php echo nl2br(htmlspecialchars($n['message'])); ?>
                         <?php if ($n['type'] === 'substitute_request' && $n['candidate_id'] !== null): ?>
                             <br>
                             <?php if ($n['candidate_status'] === 'proposed'): ?>
-                                <span class="badge badge-active">未回答</span>
+                                <?php echo renderStatusBadge('未回答', 'badge-active'); ?>
                                 <a class="btn btn-secondary" href="candidate_response.php?candidate_id=<?php echo (int) $n['candidate_id']; ?>">回答する</a>
                             <?php else: ?>
-                                <span class="badge badge-inactive">
-                                    <?php echo htmlspecialchars($candidateStatusLabels[$n['candidate_status']] ?? $n['candidate_status']); ?>
-                                </span>
+                                <?php echo renderStatusBadge(candidateStatusLabel($n['candidate_status']), candidateStatusBadgeClass($n['candidate_status'])); ?>
                                 <a class="btn btn-secondary" href="candidate_response.php?candidate_id=<?php echo (int) $n['candidate_id']; ?>">詳細を見る</a>
                             <?php endif; ?>
+                        <?php elseif ($n['type'] === 'approval_result'): ?>
+                            <br>
+                            <a class="btn btn-secondary" href="result.php">承認結果を確認する</a>
                         <?php endif; ?>
                     </td>
                     <td>

@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('employee');
 require_once __DIR__ . '/../../app/config/database.php';
 require_once __DIR__ . '/../../app/services/substitute_matcher.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '休み申請';
 $basePath  = '../../public/';
@@ -126,14 +127,6 @@ $stmt = $pdo->prepare(
 $stmt->execute(['employee_id' => $employeeId]);
 $myLeaveRequests = $stmt->fetchAll();
 
-$statusLabels = [
-    'pending'      => '受付中',
-    'matching'     => '候補者回答待ち',
-    'no_candidate' => '候補者なし（店長確認待ち）',
-    'approved'     => '承認済み',
-    'rejected'     => '却下',
-];
-
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
@@ -198,7 +191,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <td><?php echo htmlspecialchars(substr($lr['start_time'], 0, 5)); ?></td>
                     <td><?php echo htmlspecialchars(substr($lr['end_time'], 0, 5)); ?></td>
                     <td><?php echo htmlspecialchars($lr['reason'] ?? ''); ?></td>
-                    <td><?php echo htmlspecialchars($statusLabels[$lr['status']] ?? $lr['status']); ?></td>
+                    <td><?php echo renderStatusBadge(leaveRequestStatusLabel($lr['status']), leaveRequestStatusBadgeClass($lr['status'])); ?></td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

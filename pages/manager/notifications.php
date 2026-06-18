@@ -9,6 +9,7 @@
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('manager');
 require_once __DIR__ . '/../../app/config/database.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '通知確認';
 $basePath  = '../../public/';
@@ -35,15 +36,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
 $stmt = $pdo->prepare('SELECT * FROM notifications WHERE user_id = :user_id ORDER BY created_at DESC');
 $stmt->execute(['user_id' => $userId]);
 $notifications = $stmt->fetchAll();
-
-$typeLabels = [
-    'leave_request'       => '休み申請',
-    'substitute_request'  => '代勤依頼',
-    'candidate_offer'     => '代勤回答',
-    'candidate_available' => '代勤可能回答',
-    'no_candidate'        => '候補者なし',
-    'approval_result'     => '承認結果',
-];
 
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
@@ -73,12 +65,20 @@ require_once __DIR__ . '/../../app/includes/header.php';
                 <?php foreach ($notifications as $n): ?>
                 <tr>
                     <td><?php echo htmlspecialchars($n['created_at']); ?></td>
-                    <td><?php echo htmlspecialchars($typeLabels[$n['type']] ?? $n['type']); ?></td>
+                    <td><?php echo htmlspecialchars(notificationTypeLabel($n['type'])); ?></td>
                     <td><?php echo htmlspecialchars($n['title']); ?></td>
                     <td>
                         <?php echo nl2br(htmlspecialchars($n['message'])); ?>
                         <?php if ($n['type'] === 'candidate_available'): ?>
                             <br>
+                            <?php if ($n['related_leave_request_id'] !== null): ?>
+                                <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>
+                            <?php else: ?>
+                                <a class="btn btn-secondary" href="approvals.php">承認画面で確認する</a>
+                            <?php endif; ?>
+                        <?php elseif ($n['type'] === 'no_candidate'): ?>
+                            <br>
+                            <?php echo renderStatusBadge('手動対応が必要', 'badge-warning'); ?>
                             <?php if ($n['related_leave_request_id'] !== null): ?>
                                 <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>
                             <?php else: ?>
