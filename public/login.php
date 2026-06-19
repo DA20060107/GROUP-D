@@ -85,7 +85,7 @@ require_once __DIR__ . '/../app/includes/header.php';
 <div class="section" style="margin-top: 20px; text-align: center;">
     <p>まだ登録していない方はこちら：</p>
     <a href="../pages/manager/manager_registar.php" class="btn btn-secondary">店長アカウントを新規作成</a>
-    <a href="../pages/employee/exployee_registar.php" class="btn btn-secondary">従業員アカウントを新規作成</a>
+    <a href="../pages/employee/employee_registar.php" class="btn btn-secondary">従業員アカウントを新規作成</a>
 </div>
 
 <?php require_once __DIR__ . '/../app/includes/footer.php'; ?>
