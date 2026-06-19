@@ -69,7 +69,6 @@ require_once __DIR__ . '/../app/includes/header.php';
 </p>
 
 <div class="error-message"><?php echo htmlspecialchars($errorMessage); ?></div>
-
 <form class="section" action="login.php" method="post">
     <div class="form-group">
         <label for="username">ユーザーID</label>
@@ -81,17 +80,13 @@ require_once __DIR__ . '/../app/includes/header.php';
     </div>
     <button type="submit" class="btn">ログイン</button>
 </form>
-<form class="section" action="login.php" method="post">
-    ...
-    <button type="submit" class="btn">ログイン</button>
-</form>
-<div class="section" style="margin-top: 20px;">
-        <p>まだ登録していない方はこちら：</p>
-        <a href="../pages/manager/register_manager.php">店長アカウントを新規作成する</a><br>
-        <a href="../pages/employee/register_employee.php">従業員アカウントを新規作成する</a>
+
+<!-- ★ 新規登録リンクはここに置く ★ -->
+<div class="section" style="margin-top: 20px; text-align: center;">
+    <p>まだ登録していない方はこちら：</p>
+    <a href="../pages/manager/register_manager.php" class="btn btn-secondary">店長アカウントを新規作成</a>
+    <a href="../pages/employee/register_employee.php" class="btn btn-secondary">従業員アカウントを新規作成</a>
 </div>
 
-
-
-
 <?php require_once __DIR__ . '/../app/includes/footer.php'; ?>
+
