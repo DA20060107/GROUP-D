@@ -25,6 +25,7 @@ $user = currentUser();
 <ul class="menu-list">
     <li><a href="employees.php">従業員情報管理</a></li>
     <li><a href="shifts.php">シフト作成・一覧確認</a></li>
+    <li><a href="matching_settings.php">代勤候補抽出設定</a></li>
     <li><a href="notifications.php">通知確認</a></li>
     <li><a href="approvals.php">承認</a></li>
     <li><a class="logout" href="<?php echo $basePath; ?>logout.php">ログアウト</a></li>

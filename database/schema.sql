@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS employees (
     position    VARCHAR(50)  NULL COMMENT '担当可能業務・ポジション',
     note        VARCHAR(255) NULL COMMENT '備考',
     is_active   TINYINT(1)   NOT NULL DEFAULT 1 COMMENT '有効フラグ（0=無効化された従業員）',
+    skill_level TINYINT(1)   NOT NULL DEFAULT 3 COMMENT 'スキルレベル（1:未経験に近い〜5:熟練）',
     created_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -97,6 +98,8 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
                 NOT NULL DEFAULT 'pending'
                 COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）',
+    matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal'
+                COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_leave_requests_shift
@@ -173,6 +176,17 @@ CREATE TABLE IF NOT EXISTS approvals (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
+-- matching_settings: 代勤候補抽出モードなどの店長設定（key-value）
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS matching_settings (
+    id            INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key   VARCHAR(50) NOT NULL COMMENT '設定キー（例: current_matching_mode）',
+    setting_value VARCHAR(50) NOT NULL COMMENT '設定値',
+    updated_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_matching_settings_key (setting_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
 -- 既存DBへのカラム追加（マイグレーション）
 --
 -- 上記の CREATE TABLE IF NOT EXISTS は、テーブルが既に存在する環境では
@@ -206,3 +220,17 @@ ALTER TABLE leave_requests
     MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
         NOT NULL DEFAULT 'pending'
         COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）';
+
+-- ------------------------------------------------------------
+-- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）
+-- ------------------------------------------------------------
+ALTER TABLE employees
+    ADD COLUMN IF NOT EXISTS skill_level TINYINT(1) NOT NULL DEFAULT 3 COMMENT 'スキルレベル（1:未経験に近い〜5:熟練）' AFTER is_active;
+
+ALTER TABLE leave_requests
+    ADD COLUMN IF NOT EXISTS matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal' COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）' AFTER status;
+
+-- 抽出モードの初期設定（既存DBで未設定の場合のみ追加）
+INSERT INTO matching_settings (setting_key, setting_value)
+SELECT 'current_matching_mode', 'normal'
+WHERE NOT EXISTS (SELECT 1 FROM matching_settings WHERE setting_key = 'current_matching_mode');

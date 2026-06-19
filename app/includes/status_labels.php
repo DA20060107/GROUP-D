@@ -117,6 +117,33 @@ function notificationTypeLabel(?string $type): string
 }
 
 // ------------------------------------------------------------
+// employees.skill_level（1〜5）
+// ------------------------------------------------------------
+function skillLevelLabel(?int $level): string
+{
+    $labels = [
+        1 => '1：未経験に近い',
+        2 => '2：補助可能',
+        3 => '3：通常業務可能',
+        4 => '4：安定して対応可能',
+        5 => '5：熟練',
+    ];
+    return $labels[$level] ?? (string) $level;
+}
+
+/** スキルレベル選択フォーム用の一覧（[level => 表示ラベル]） */
+function skillLevelOptions(): array
+{
+    return [
+        1 => skillLevelLabel(1),
+        2 => skillLevelLabel(2),
+        3 => skillLevelLabel(3),
+        4 => skillLevelLabel(4),
+        5 => skillLevelLabel(5),
+    ];
+}
+
+// ------------------------------------------------------------
 // バッジHTMLの生成（ラベルはHTMLエスケープして出力）
 // ------------------------------------------------------------
 function renderStatusBadge(string $label, string $badgeClass): string

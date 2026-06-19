@@ -2,8 +2,8 @@
 /**
  * 代勤候補抽出・通知作成サービス
  *
- * 【現在の暫定抽出条件】
- *   休み申請されたシフトに対して、以下をすべて満たす従業員を代勤候補とする。
+ * 【必須条件（どの抽出モードでも必ず満たす）】
+ *   休み申請されたシフトに対して、以下をすべて満たす従業員のみを代勤候補とする。
  *     1. 休み申請を出した本人ではない
  *     2. 従業員が有効状態（is_active = 1）である
  *     3. 休み申請対象のシフト日と勤務可能日（available_date）が一致している
@@ -11,12 +11,16 @@
  *     5. 同じ日に時間帯が重複する別シフトが入っていない
  *     6. 既に同じ休み申請の候補者として登録済みでない
  *
- * 【将来の拡張予定】
- *   スキル・担当可能ポジション・勤続年数・過去の代勤回数・店長側の優先度などを
- *   組み合わせたスコアリング方式に変更する予定。
- *   そのため、候補者抽出処理（findSubstituteCandidates）を独立した関数として
- *   分離しており、将来的にはこの関数の内部実装のみを変更すれば対応できる
- *   構造にしている。
+ * 【スコア条件（必須条件を満たした候補者に対してのみ計算）】
+ *   店長が設定した抽出モード（matching_settings.current_matching_mode）に応じて、
+ *   ポジション一致度・スキルレベル・勤続年数・時間一致度の4項目を重み付けして
+ *   100点満点のスコアを計算する（calculateCandidateScore()）。
+ *   このスコアは絶対評価ではなく、候補者の表示順・店長の判断材料にするための
+ *   相対的な指標である。
+ *
+ * 【今回（Step1）の範囲】
+ *   スコア計算・抽出理由の保存・表示までを実装する。
+ *   スコア上位3人だけへの通知、全員拒否時の次グループ通知などは未実装。
  */
 
 /**
@@ -41,10 +45,236 @@ function getLeaveRequestShift(PDO $pdo, int $leaveRequestId)
     return $row === false ? null : $row;
 }
 
+// ------------------------------------------------------------
+// 代勤候補抽出モード（matching_settings.current_matching_mode）
+// ------------------------------------------------------------
+
+/** 抽出モードとして許可する値 */
+function getMatchingModes(): array
+{
+    return ['normal', 'staffing_priority', 'skill_priority'];
+}
+
 /**
- * 休み申請に対する代勤候補（従業員）を抽出する
+ * 現在の代勤候補抽出モードを取得する
+ * 未設定・不正な値の場合は 'normal'（通常）を返す
+ */
+function getCurrentMatchingMode(PDO $pdo): string
+{
+    $stmt = $pdo->query("SELECT setting_value FROM matching_settings WHERE setting_key = 'current_matching_mode'");
+    $value = $stmt->fetchColumn();
+
+    return ($value !== false && in_array($value, getMatchingModes(), true)) ? $value : 'normal';
+}
+
+/**
+ * 現在の代勤候補抽出モードを設定する
  *
- * @return array 候補従業員の配列（各要素は employee_id, name を含む連想配列）
+ * @throws InvalidArgumentException 不正なモードが指定された場合
+ */
+function setCurrentMatchingMode(PDO $pdo, string $mode): void
+{
+    if (!in_array($mode, getMatchingModes(), true)) {
+        throw new InvalidArgumentException('不正な抽出モードです。');
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO matching_settings (setting_key, setting_value)
+         VALUES ('current_matching_mode', :mode)
+         ON DUPLICATE KEY UPDATE setting_value = :mode2"
+    );
+    $stmt->execute(['mode' => $mode, 'mode2' => $mode]);
+}
+
+/** 抽出モードの日本語表示名 */
+function getMatchingModeLabel(string $mode): string
+{
+    $labels = [
+        'normal'            => '通常',
+        'staffing_priority' => '人員確保優先',
+        'skill_priority'    => 'スキル重視',
+    ];
+    return $labels[$mode] ?? $mode;
+}
+
+/** 抽出モードの説明文 */
+function getMatchingModeDescription(string $mode): string
+{
+    $descriptions = [
+        'normal'            => '通常時は、勤務可能であることに加え、ポジション・スキル・勤続年数・時間一致度をバランスよく評価します。',
+        'staffing_priority' => '人員不足時は、ポジションやスキルよりも、対象時間に出勤できることを重視します。',
+        'skill_priority'    => '業務品質を保ちたい場合は、対象業務に対応できるスキルや経験を持つ従業員を優先します。',
+    ];
+    return $descriptions[$mode] ?? '';
+}
+
+/**
+ * 抽出モードごとのスコア重み（内部初期値、合計100）
+ * 店長に細かい配分を設定させず、運用目的に応じたプリセットとして扱う。
+ */
+function getMatchingWeights(string $mode): array
+{
+    $weights = [
+        'normal'            => ['position' => 30, 'skill' => 30, 'tenure' => 20, 'time' => 20],
+        'staffing_priority' => ['position' => 10, 'skill' => 10, 'tenure' => 10, 'time' => 70],
+        'skill_priority'    => ['position' => 30, 'skill' => 50, 'tenure' => 15, 'time' => 5],
+    ];
+    return $weights[$mode] ?? $weights['normal'];
+}
+
+// ------------------------------------------------------------
+// スコア条件（必須条件を満たした候補者に対してのみ計算する）
+// ------------------------------------------------------------
+
+/** ポジション一致度のスコア（0〜100）とラベルを算出する */
+function scorePositionMatch(?string $candidatePosition, ?string $shiftPosition): array
+{
+    $candidatePosition = trim((string) $candidatePosition);
+    $shiftPosition      = trim((string) $shiftPosition);
+
+    if ($candidatePosition === '' || $shiftPosition === '') {
+        return ['score' => 50, 'label' => 'ポジション情報なし'];
+    }
+    if ($candidatePosition === $shiftPosition) {
+        return ['score' => 100, 'label' => 'ポジション一致'];
+    }
+    // 「ホール・レジ」のように複数業務をまとめて持つデータがあるため、部分一致は中間評価とする
+    if (mb_strpos($candidatePosition, $shiftPosition) !== false || mb_strpos($shiftPosition, $candidatePosition) !== false) {
+        return ['score' => 70, 'label' => 'ポジション部分一致'];
+    }
+    return ['score' => 0, 'label' => 'ポジション不一致'];
+}
+
+/** スキルレベル（1〜5）のスコアとラベルを算出する */
+function scoreSkillLevel(int $skillLevel): array
+{
+    $skillLevel = max(1, min(5, $skillLevel));
+    $map = [5 => 100, 4 => 80, 3 => 60, 2 => 40, 1 => 20];
+    return ['score' => $map[$skillLevel], 'label' => 'スキルレベル' . $skillLevel];
+}
+
+/** 勤続年数のスコアとラベルを算出する（$referenceDate: 対象シフト日 Y-m-d） */
+function scoreTenure(?string $hireDate, string $referenceDate): array
+{
+    if ($hireDate === null || $hireDate === '') {
+        return ['score' => 50, 'label' => '勤続情報なし'];
+    }
+
+    $days = (strtotime($referenceDate) - strtotime($hireDate)) / 86400;
+
+    if ($days >= 365) {
+        return ['score' => 100, 'label' => '勤続1年以上'];
+    }
+    if ($days >= 180) {
+        return ['score' => 70, 'label' => '勤続6か月以上'];
+    }
+    if ($days >= 90) {
+        return ['score' => 40, 'label' => '勤続3か月以上'];
+    }
+    return ['score' => 20, 'label' => '勤続3か月未満'];
+}
+
+/** 時間一致度のスコアとラベルを算出する（$extraSeconds: 勤務可能時間がシフト時間を上回る秒数。不明な場合は null） */
+function scoreTimeMatch(?int $extraSeconds): array
+{
+    if ($extraSeconds === null) {
+        return ['score' => 70, 'label' => '勤務可能時間が対象シフトをカバー'];
+    }
+    if ($extraSeconds <= 0) {
+        return ['score' => 100, 'label' => '勤務可能時間が対象シフトとほぼ一致'];
+    }
+    if ($extraSeconds <= 3600) {
+        return ['score' => 85, 'label' => '勤務可能時間が対象シフトに近い'];
+    }
+    if ($extraSeconds <= 10800) {
+        return ['score' => 60, 'label' => '勤務可能時間が対象シフトより広め'];
+    }
+    return ['score' => 40, 'label' => '勤務可能時間が対象シフトより大幅に広い'];
+}
+
+/**
+ * 対象シフトをカバーする勤務可能時間のうち、最も近い（無駄が少ない）ものとの差（秒）を取得する
+ * 該当する勤務可能日登録が見つからない場合は null を返す
+ */
+function getTightestAvailabilityExtraSeconds(PDO $pdo, int $employeeId, array $shift): ?int
+{
+    $stmt = $pdo->prepare(
+        'SELECT MIN(
+                (TIME_TO_SEC(end_time) - TIME_TO_SEC(start_time))
+                - (TIME_TO_SEC(:shift_end) - TIME_TO_SEC(:shift_start))
+            ) AS extra_seconds
+         FROM availability
+         WHERE employee_id = :employee_id
+           AND available_date = :shift_date
+           AND start_time <= :start_time
+           AND end_time >= :end_time'
+    );
+    $stmt->execute([
+        'shift_end'   => $shift['end_time'],
+        'shift_start' => $shift['start_time'],
+        'employee_id' => $employeeId,
+        'shift_date'  => $shift['shift_date'],
+        'start_time'  => $shift['start_time'],
+        'end_time'    => $shift['end_time'],
+    ]);
+    $value = $stmt->fetchColumn();
+
+    return ($value !== false && $value !== null) ? (int) $value : null;
+}
+
+/**
+ * 候補者・対象シフト・抽出モードから、スコア（0〜100）と抽出理由を算出する
+ *
+ * @param array $candidate employee_id, position, skill_level, hire_date を含む連想配列
+ * @param array $shift     shift_date, start_time, end_time, position を含む連想配列
+ *
+ * @return array score(int), reason(string), details(array) を含む連想配列
+ */
+function calculateCandidateScore(array $candidate, array $shift, ?int $availabilityExtraSeconds, string $mode): array
+{
+    $weights = getMatchingWeights($mode);
+
+    $details = [
+        'position' => scorePositionMatch($candidate['position'] ?? null, $shift['position'] ?? null),
+        'skill'    => scoreSkillLevel((int) ($candidate['skill_level'] ?? 3)),
+        'tenure'   => scoreTenure($candidate['hire_date'] ?? null, $shift['shift_date']),
+        'time'     => scoreTimeMatch($availabilityExtraSeconds),
+    ];
+
+    $total = (
+        $details['position']['score'] * $weights['position']
+        + $details['skill']['score'] * $weights['skill']
+        + $details['tenure']['score'] * $weights['tenure']
+        + $details['time']['score'] * $weights['time']
+    ) / 100;
+
+    return [
+        'score'   => (int) round($total),
+        'reason'  => buildMatchReason($details, $mode),
+        'details' => $details,
+    ];
+}
+
+/** スコア内訳のラベルを連結し、抽出理由の文言を組み立てる */
+function buildMatchReason(array $scoreDetails, string $mode): string
+{
+    $labels = [
+        $scoreDetails['position']['label'] ?? '',
+        $scoreDetails['skill']['label'] ?? '',
+        $scoreDetails['tenure']['label'] ?? '',
+        $scoreDetails['time']['label'] ?? '',
+    ];
+    $labels = array_filter($labels, static function ($label) {
+        return $label !== '';
+    });
+
+    return implode('、', $labels);
+}
+
+/**
+ * 休み申請に対する代勤候補（従業員）を抽出する（必須条件のみで絞り込む）
+ *
+ * @return array 候補従業員の配列（employee_id, name, position, skill_level, hire_date を含む連想配列）
  */
 function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
 {
@@ -54,7 +284,7 @@ function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
     }
 
     $stmt = $pdo->prepare(
-        'SELECT DISTINCT e.id AS employee_id, e.name
+        'SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.skill_level, e.hire_date
          FROM employees e
          JOIN availability a ON a.employee_id = e.id
          WHERE e.is_active = 1
@@ -93,12 +323,14 @@ function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
 /**
  * 代勤候補を substitute_candidates テーブルに登録する
  *
+ * 必須条件を満たした候補者（findSubstituteCandidates()）に対して、
+ * 指定された抽出モードでスコア・抽出理由を計算し、スコアの高い順に登録する。
  * 既に登録済みの候補者は findSubstituteCandidates() の時点で除外されるため、
  * 重複登録は発生しない。
  *
- * @return array 新たに登録した候補従業員の配列（employee_id, name を含む）
+ * @return array スコア降順に並んだ候補従業員の配列（employee_id, name, match_score, match_reason を含む）
  */
-function createSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
+function createSubstituteCandidates(PDO $pdo, int $leaveRequestId, string $mode): array
 {
     $candidates = findSubstituteCandidates($pdo, $leaveRequestId);
 
@@ -106,8 +338,24 @@ function createSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
         return [];
     }
 
-    // match_score / match_reason は暫定の固定値。
-    // 将来的にはスキル・ポジション一致度などから算出したスコアに置き換える。
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+
+    foreach ($candidates as &$candidate) {
+        $extraSeconds = getTightestAvailabilityExtraSeconds($pdo, (int) $candidate['employee_id'], $target);
+        $result       = calculateCandidateScore($candidate, $target, $extraSeconds, $mode);
+
+        $candidate['match_score']  = $result['score'];
+        $candidate['match_reason'] = $result['reason'];
+    }
+    unset($candidate);
+
+    usort($candidates, static function (array $a, array $b): int {
+        if ($a['match_score'] === $b['match_score']) {
+            return $a['employee_id'] <=> $b['employee_id'];
+        }
+        return $b['match_score'] <=> $a['match_score'];
+    });
+
     $stmt = $pdo->prepare(
         "INSERT INTO substitute_candidates
             (leave_request_id, candidate_employee_id, status, match_score, match_reason, matched_at)
@@ -118,8 +366,8 @@ function createSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
         $stmt->execute([
             'leave_request_id'      => $leaveRequestId,
             'candidate_employee_id' => $candidate['employee_id'],
-            'match_score'           => 100,
-            'match_reason'          => '勤務可能日・時間が一致',
+            'match_score'           => $candidate['match_score'],
+            'match_reason'          => $candidate['match_reason'],
         ]);
     }
 
@@ -268,11 +516,19 @@ function createCandidateAvailableNotification(PDO $pdo, int $candidateId): void
  * 呼び出し元（pages/employee/leave_request.php）で、休み申請の登録と
  * 合わせてトランザクション内から呼び出すことを想定している。
  *
+ * 現在の抽出モード（matching_settings）を取得し、休み申請にその時点の
+ * モードを記録した上で、候補抽出・スコア計算を行う。
+ *
  * @return string 更新後の leave_requests.status（'matching' または 'no_candidate'）
  */
 function processSubstituteMatching(PDO $pdo, int $leaveRequestId): string
 {
-    $candidates = createSubstituteCandidates($pdo, $leaveRequestId);
+    $mode = getCurrentMatchingMode($pdo);
+
+    $pdo->prepare('UPDATE leave_requests SET matching_mode = :mode WHERE id = :id')
+        ->execute(['mode' => $mode, 'id' => $leaveRequestId]);
+
+    $candidates = createSubstituteCandidates($pdo, $leaveRequestId, $mode);
 
     if (!empty($candidates)) {
         createCandidateNotifications($pdo, $leaveRequestId, $candidates);

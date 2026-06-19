@@ -180,7 +180,7 @@ if (isset($_GET['msg'])) {
 // 未処理の休み申請一覧（候補者回答待ち・候補者なし）
 // ------------------------------------------------------------
 $pendingLeaveRequests = $pdo->query(
-    "SELECT lr.id AS leave_request_id, lr.reason, lr.status AS leave_status, lr.created_at,
+    "SELECT lr.id AS leave_request_id, lr.reason, lr.status AS leave_status, lr.matching_mode, lr.created_at,
             s.shift_date, s.start_time, s.end_time, s.position,
             req.name AS requester_name
      FROM leave_requests lr
@@ -191,11 +191,12 @@ $pendingLeaveRequests = $pdo->query(
 )->fetchAll();
 
 $candidateStmt = $pdo->prepare(
-    "SELECT sc.id, sc.status, sc.match_reason, sc.responded_at, e.name AS candidate_name
+    "SELECT sc.id, sc.status, sc.match_score, sc.match_reason, sc.responded_at,
+            e.name AS candidate_name, e.skill_level, e.hire_date
      FROM substitute_candidates sc
      JOIN employees e ON e.id = sc.candidate_employee_id
      WHERE sc.leave_request_id = :leave_request_id
-     ORDER BY sc.id"
+     ORDER BY sc.match_score DESC, sc.id"
 );
 
 foreach ($pendingLeaveRequests as &$lr) {
@@ -267,6 +268,10 @@ require_once __DIR__ . '/../../app/includes/header.php';
                         <td><?php echo htmlspecialchars($lr['reason'] ?? ''); ?></td>
                     </tr>
                     <tr>
+                        <th>抽出モード</th>
+                        <td><?php echo htmlspecialchars(getMatchingModeLabel($lr['matching_mode'] ?? 'normal')); ?></td>
+                    </tr>
+                    <tr>
                         <th>状態</th>
                         <td><?php echo renderStatusBadge(leaveRequestStatusLabel($lr['leave_status']), leaveRequestStatusBadgeClass($lr['leave_status'])); ?></td>
                     </tr>
@@ -281,7 +286,10 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <tr>
                         <th>代勤候補</th>
                         <th>回答状況</th>
-                        <th>マッチ理由</th>
+                        <th>スコア</th>
+                        <th>抽出理由</th>
+                        <th>スキルレベル</th>
+                        <th>勤続</th>
                         <th>操作</th>
                     </tr>
                 </thead>
@@ -292,7 +300,10 @@ require_once __DIR__ . '/../../app/includes/header.php';
                         <td>
                             <?php echo renderStatusBadge(candidateStatusLabel($candidate['status']), candidateStatusBadgeClass($candidate['status'])); ?>
                         </td>
+                        <td><?php echo $candidate['match_score'] !== null ? htmlspecialchars((string) $candidate['match_score']) . '点' : '-'; ?></td>
                         <td><?php echo htmlspecialchars($candidate['match_reason'] ?? ''); ?></td>
+                        <td><?php echo htmlspecialchars(skillLevelLabel($candidate['skill_level'] ?? null)); ?></td>
+                        <td><?php echo htmlspecialchars(scoreTenure($candidate['hire_date'] ?? null, date('Y-m-d'))['label']); ?></td>
                         <td>
                             <?php if ($candidate['status'] === 'accepted'): ?>
                             <form method="post" action="approvals.php" style="display:inline;">

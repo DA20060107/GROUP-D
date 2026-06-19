@@ -13,12 +13,12 @@ USE `シフト管理システム`;
 -- ------------------------------------------------------------
 -- employees: 従業員情報（5名）
 -- ------------------------------------------------------------
-INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_active) VALUES
-    (1, '山田 太郎', 'yamada@example.com', '090-1111-1111', '2023-04-01', 'キッチン', NULL, 1),
-    (2, '佐藤 花子', 'sato@example.com',   '090-2222-2222', '2023-06-01', 'ホール', NULL, 1),
-    (3, '鈴木 次郎', 'suzuki@example.com', '090-3333-3333', '2024-01-10', 'ホール・レジ', NULL, 1),
-    (4, '高橋 美咲', 'takahashi@example.com', '090-4444-4444', '2024-04-01', 'キッチン', NULL, 1),
-    (5, '田中 健太', 'tanaka@example.com', '090-5555-5555', '2025-02-15', 'ホール', NULL, 1);
+INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_active, skill_level) VALUES
+    (1, '山田 太郎', 'yamada@example.com', '090-1111-1111', '2023-04-01', 'キッチン', NULL, 1, 4),
+    (2, '佐藤 花子', 'sato@example.com',   '090-2222-2222', '2023-06-01', 'ホール', NULL, 1, 3),
+    (3, '鈴木 次郎', 'suzuki@example.com', '090-3333-3333', '2024-01-10', 'ホール・レジ', NULL, 1, 5),
+    (4, '高橋 美咲', 'takahashi@example.com', '090-4444-4444', '2024-04-01', 'キッチン', NULL, 1, 2),
+    (5, '田中 健太', 'tanaka@example.com', '090-5555-5555', '2025-02-15', 'ホール', NULL, 1, 3);
 
 -- ------------------------------------------------------------
 -- users: 店長1名 + 従業員5名
@@ -57,14 +57,23 @@ INSERT INTO availability (employee_id, available_date, start_time, end_time, not
 -- ------------------------------------------------------------
 -- leave_requests: サンプル休み申請（佐藤さんが2026-06-15のシフトを申請）
 -- ------------------------------------------------------------
-INSERT INTO leave_requests (id, shift_id, employee_id, reason, status) VALUES
-    (1, 2, 2, '通院のため', 'matching');
+INSERT INTO leave_requests (id, shift_id, employee_id, reason, status, matching_mode) VALUES
+    (1, 2, 2, '通院のため', 'matching', 'normal');
 
 -- ------------------------------------------------------------
 -- substitute_candidates: サンプル代勤候補（鈴木さんが候補）
 -- ------------------------------------------------------------
 INSERT INTO substitute_candidates (leave_request_id, candidate_employee_id, status, match_score, match_reason, matched_at, responded_at) VALUES
-    (1, 3, 'accepted', 100, '勤務可能日・時間が一致', '2026-06-12 09:00:00', '2026-06-12 10:30:00');
+    (1, 3, 'accepted', 82, 'ポジション不一致、スキルレベル5、勤続1年以上、勤務可能時間が対象シフトをほぼカバー', '2026-06-12 09:00:00', '2026-06-12 10:30:00');
+
+-- ------------------------------------------------------------
+-- matching_settings: 代勤候補抽出モードの初期設定（通常モード）
+-- schema.sql の移行処理で既に1行登録されている場合があるため、
+-- ON DUPLICATE KEY UPDATE で安全に上書きする（空DB・既存DBどちらでもエラーにならない）
+-- ------------------------------------------------------------
+INSERT INTO matching_settings (setting_key, setting_value) VALUES
+    ('current_matching_mode', 'normal')
+ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);
 
 -- ------------------------------------------------------------
 -- notifications: サンプル通知

@@ -11,6 +11,7 @@
 require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('manager');
 require_once __DIR__ . '/../../app/config/database.php';
+require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '従業員情報管理';
 $basePath  = '../../public/';
@@ -22,7 +23,7 @@ $successMessage = '';
 $editEmployee = null;
 
 // 新規登録フォームの再表示用データ
-$newEmployeeForm = ['name' => '', 'username' => '', 'position' => '', 'note' => ''];
+$newEmployeeForm = ['name' => '', 'username' => '', 'position' => '', 'note' => '', 'hire_date' => '', 'skill_level' => '3'];
 
 // ------------------------------------------------------------
 // POST処理
@@ -31,22 +32,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'create_employee') {
-        $name     = trim($_POST['name'] ?? '');
-        $username = trim($_POST['username'] ?? '');
-        $password = (string) ($_POST['password'] ?? '');
-        $position = trim($_POST['position'] ?? '');
-        $note     = trim($_POST['note'] ?? '');
+        $name        = trim($_POST['name'] ?? '');
+        $username    = trim($_POST['username'] ?? '');
+        $password    = (string) ($_POST['password'] ?? '');
+        $position    = trim($_POST['position'] ?? '');
+        $note        = trim($_POST['note'] ?? '');
+        $hireDate    = trim($_POST['hire_date'] ?? '');
+        $skillLevel  = trim($_POST['skill_level'] ?? '3');
 
         // 入力エラー時に再表示するためのフォーム値
         $newEmployeeForm = [
-            'name'     => $name,
-            'username' => $username,
-            'position' => $position,
-            'note'     => $note,
+            'name'        => $name,
+            'username'    => $username,
+            'position'    => $position,
+            'note'        => $note,
+            'hire_date'   => $hireDate,
+            'skill_level' => $skillLevel,
         ];
 
         if ($name === '' || $username === '' || $password === '') {
             $errorMessage = '氏名・ログインID・初期パスワードは必須です。';
+        } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
+            $errorMessage = 'スキルレベルは1〜5の範囲で指定してください。';
         } else {
             $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
             $stmt->execute(['username' => $username]);
@@ -58,12 +65,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->beginTransaction();
 
                     $stmt = $pdo->prepare(
-                        'INSERT INTO employees (name, position, note) VALUES (:name, :position, :note)'
+                        'INSERT INTO employees (name, position, note, hire_date, skill_level)
+                         VALUES (:name, :position, :note, :hire_date, :skill_level)'
                     );
                     $stmt->execute([
-                        'name'     => $name,
-                        'position' => $position !== '' ? $position : null,
-                        'note'     => $note !== '' ? $note : null,
+                        'name'        => $name,
+                        'position'    => $position !== '' ? $position : null,
+                        'note'        => $note !== '' ? $note : null,
+                        'hire_date'   => $hireDate !== '' ? $hireDate : null,
+                        'skill_level' => (int) $skillLevel,
                     ]);
                     $newEmployeeId = (int) $pdo->lastInsertId();
 
@@ -89,13 +99,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     } elseif ($action === 'update_employee') {
-        $id       = (int) ($_POST['employee_id'] ?? 0);
-        $name     = trim($_POST['name'] ?? '');
-        $email    = trim($_POST['email'] ?? '');
-        $phone    = trim($_POST['phone'] ?? '');
-        $hireDate = trim($_POST['hire_date'] ?? '');
-        $position = trim($_POST['position'] ?? '');
-        $note     = trim($_POST['note'] ?? '');
+        $id         = (int) ($_POST['employee_id'] ?? 0);
+        $name       = trim($_POST['name'] ?? '');
+        $email      = trim($_POST['email'] ?? '');
+        $phone      = trim($_POST['phone'] ?? '');
+        $hireDate   = trim($_POST['hire_date'] ?? '');
+        $position   = trim($_POST['position'] ?? '');
+        $note       = trim($_POST['note'] ?? '');
+        $skillLevel = trim($_POST['skill_level'] ?? '3');
 
         $stmt = $pdo->prepare('SELECT * FROM employees WHERE id = :id');
         $stmt->execute(['id' => $id]);
@@ -106,21 +117,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($name === '') {
             $errorMessage = '氏名は必須です。';
             $editEmployee = $_POST;
+        } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
+            $errorMessage = 'スキルレベルは1〜5の範囲で指定してください。';
+            $editEmployee = $_POST;
         } else {
             $stmt = $pdo->prepare(
                 'UPDATE employees
                  SET name = :name, email = :email, phone = :phone, hire_date = :hire_date,
-                     position = :position, note = :note
+                     position = :position, note = :note, skill_level = :skill_level
                  WHERE id = :id'
             );
             $stmt->execute([
-                'name'      => $name,
-                'email'     => $email !== '' ? $email : null,
-                'phone'     => $phone !== '' ? $phone : null,
-                'hire_date' => $hireDate !== '' ? $hireDate : null,
-                'position'  => $position !== '' ? $position : null,
-                'note'      => $note !== '' ? $note : null,
-                'id'        => $id,
+                'name'        => $name,
+                'email'       => $email !== '' ? $email : null,
+                'phone'       => $phone !== '' ? $phone : null,
+                'hire_date'   => $hireDate !== '' ? $hireDate : null,
+                'position'    => $position !== '' ? $position : null,
+                'note'        => $note !== '' ? $note : null,
+                'skill_level' => (int) $skillLevel,
+                'id'          => $id,
             ]);
 
             // ログイン中ユーザー名の表示にも反映させるため users.name も更新する
@@ -263,6 +278,16 @@ function ef($editEmployee, $key)
             <input type="text" id="edit_position" name="position" value="<?php echo ef($editEmployee, 'position'); ?>" placeholder="例: ホール, キッチン">
         </div>
         <div class="form-group">
+            <label for="edit_skill_level">スキルレベル</label>
+            <select id="edit_skill_level" name="skill_level">
+                <?php foreach (skillLevelOptions() as $level => $label): ?>
+                <option value="<?php echo (int) $level; ?>" <?php echo ((string) $level === (string) ($editEmployee['skill_level'] ?? '3')) ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($label); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="form-group">
             <label for="edit_note">備考</label>
             <textarea id="edit_note" name="note" rows="3"><?php echo ef($editEmployee, 'note'); ?></textarea>
         </div>
@@ -296,6 +321,20 @@ function ef($editEmployee, $key)
             <input type="text" id="new_position" name="position" placeholder="例: ホール, キッチン" value="<?php echo htmlspecialchars($newEmployeeForm['position']); ?>">
         </div>
         <div class="form-group">
+            <label for="new_hire_date">入社日</label>
+            <input type="date" id="new_hire_date" name="hire_date" value="<?php echo htmlspecialchars($newEmployeeForm['hire_date']); ?>">
+        </div>
+        <div class="form-group">
+            <label for="new_skill_level">スキルレベル</label>
+            <select id="new_skill_level" name="skill_level">
+                <?php foreach (skillLevelOptions() as $level => $label): ?>
+                <option value="<?php echo (int) $level; ?>" <?php echo ((string) $level === $newEmployeeForm['skill_level']) ? 'selected' : ''; ?>>
+                    <?php echo htmlspecialchars($label); ?>
+                </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="form-group">
             <label for="new_note">備考</label>
             <textarea id="new_note" name="note" rows="3"><?php echo htmlspecialchars($newEmployeeForm['note']); ?></textarea>
         </div>
@@ -315,6 +354,7 @@ function ef($editEmployee, $key)
                 <th>電話番号</th>
                 <th>入社日</th>
                 <th>ポジション</th>
+                <th>スキルレベル</th>
                 <th>備考</th>
                 <th>状態</th>
                 <th>操作</th>
@@ -330,6 +370,7 @@ function ef($editEmployee, $key)
                 <td><?php echo htmlspecialchars($emp['phone'] ?? ''); ?></td>
                 <td><?php echo htmlspecialchars($emp['hire_date'] ?? ''); ?></td>
                 <td><?php echo htmlspecialchars($emp['position'] ?? ''); ?></td>
+                <td><?php echo htmlspecialchars(skillLevelLabel($emp['skill_level'] ?? null)); ?></td>
                 <td><?php echo htmlspecialchars($emp['note'] ?? ''); ?></td>
                 <td>
                     <?php if ((int) $emp['is_active'] === 1): ?>
