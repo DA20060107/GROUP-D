@@ -82,8 +82,9 @@ require_once __DIR__ . '/../app/includes/header.php';
     <button type="submit" class="btn">ログイン</button>
 </form>
 <div class="section" style="margin-top: 20px;">
-    <a href="register_manager.php">店長アカウントを新規作成する</a><br>
-    <a href="register_employee.php">従業員アカウントを新規作成する</a>
+    <a href="../pages/manager/register_manager.php">店長アカウントを新規作成する</a><br>
+    <a href="../pages/employee/register_employee.php">従業員アカウントを新規作成する</a>
 </div>
+
 
 <?php require_once __DIR__ . '/../app/includes/footer.php'; ?>
