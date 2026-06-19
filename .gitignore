@@ -13,6 +13,7 @@ Thumbs.db
 # Temporary files
 tmp/
 temp/
+.codex-tmp-mysql-*/
 
 # Uploads
 uploads/

@@ -95,9 +95,9 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     shift_id    INT NOT NULL COMMENT '休みたいシフト',
     employee_id INT NOT NULL COMMENT '申請した従業員',
     reason      VARCHAR(255) NULL COMMENT '申請理由',
-    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled')
+    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval')
                 NOT NULL DEFAULT 'pending'
-                COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 候補者なし, cancelled: 申請者本人によるキャンセル）',
+                COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了）',
     matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal'
                 COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
 CREATE TABLE IF NOT EXISTS notifications (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     user_id     INT NOT NULL COMMENT '通知先ユーザー',
-    type        VARCHAR(50) NOT NULL COMMENT '通知種別（leave_request, substitute_request, candidate_offer, no_candidate, approval_result, leave_request_cancelled など）',
+    type        VARCHAR(50) NOT NULL COMMENT '通知種別（approval_result, leave_request_cancelled, after_approval_cancel_requested など）',
     title       VARCHAR(100) NOT NULL COMMENT '通知タイトル',
     message     TEXT NOT NULL COMMENT '通知内容',
     is_read     TINYINT(1) NOT NULL DEFAULT 0 COMMENT '既読フラグ',
@@ -173,6 +173,37 @@ CREATE TABLE IF NOT EXISTS approvals (
     CONSTRAINT fk_approvals_manager
         FOREIGN KEY (manager_id) REFERENCES users (id)
         ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- cancellation_requests: 承認済みの休み申請・代勤に対するキャンセル申請
+--
+-- 現在は request_type=requester_after_approval のみ使用する。
+-- 将来、代勤者側キャンセルを substitute_after_approval として追加できる構造にする。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS cancellation_requests (
+    id                       INT AUTO_INCREMENT PRIMARY KEY,
+    leave_request_id         INT NOT NULL COMMENT '対象の休み申請',
+    request_type             VARCHAR(50) NOT NULL COMMENT '申請種別（requester_after_approval / 将来: substitute_after_approval）',
+    requested_by_employee_id INT NOT NULL COMMENT 'キャンセル申請を行った従業員',
+    reason                   TEXT NULL COMMENT 'キャンセル申請理由',
+    status                   ENUM('pending', 'approved', 'rejected')
+                             NOT NULL DEFAULT 'pending' COMMENT 'キャンセル申請状態',
+    decided_by_user_id       INT NULL COMMENT '承認・却下した店長（users.id）',
+    decided_at               DATETIME NULL COMMENT '承認・却下日時',
+    created_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at               DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_cancellation_leave_request (leave_request_id),
+    KEY idx_cancellation_status (status),
+    CONSTRAINT fk_cancellation_leave_request
+        FOREIGN KEY (leave_request_id) REFERENCES leave_requests (id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_cancellation_requested_employee
+        FOREIGN KEY (requested_by_employee_id) REFERENCES employees (id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_cancellation_decided_user
+        FOREIGN KEY (decided_by_user_id) REFERENCES users (id)
+        ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ------------------------------------------------------------
@@ -217,9 +248,9 @@ ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
 
 ALTER TABLE leave_requests
-    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled')
+    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval')
         NOT NULL DEFAULT 'pending'
-        COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 候補者なし, cancelled: 申請者本人によるキャンセル）';
+        COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了）';
 
 -- ------------------------------------------------------------
 -- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）

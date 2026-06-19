@@ -206,14 +206,23 @@ foreach ($pendingLeaveRequests as &$lr) {
 unset($lr);
 
 // ------------------------------------------------------------
-// 処理済みの休み申請一覧（承認済み・却下・本人キャンセル済み）
+// 処理済みの休み申請一覧（承認済み・却下・各キャンセル済み）
 // ------------------------------------------------------------
 $processedLeaveRequests = $pdo->query(
     "SELECT lr.id AS leave_request_id, lr.reason, lr.status AS leave_status,
             s.shift_date, s.start_time, s.end_time, s.position,
             req.name AS requester_name,
             a.status AS approval_status,
-            COALESCE(a.approved_at, lr.updated_at) AS processed_at,
+            CASE
+                WHEN lr.status = 'cancelled_after_approval' THEN (
+                    SELECT MAX(cr.decided_at)
+                    FROM cancellation_requests cr
+                    WHERE cr.leave_request_id = lr.id
+                      AND cr.request_type = 'requester_after_approval'
+                      AND cr.status = 'approved'
+                )
+                ELSE COALESCE(a.approved_at, lr.updated_at)
+            END AS processed_at,
             sub.name AS substitute_name
      FROM leave_requests lr
      JOIN shifts s ON s.id = lr.shift_id
@@ -221,7 +230,7 @@ $processedLeaveRequests = $pdo->query(
      LEFT JOIN approvals a ON a.leave_request_id = lr.id
      LEFT JOIN substitute_candidates sc ON sc.id = a.substitute_candidate_id
      LEFT JOIN employees sub ON sub.id = sc.candidate_employee_id
-     WHERE lr.status IN ('approved', 'rejected', 'cancelled')
+     WHERE lr.status IN ('approved', 'rejected', 'cancelled', 'cancelled_after_approval')
      ORDER BY processed_at DESC, lr.id DESC"
 )->fetchAll();
 

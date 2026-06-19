@@ -99,7 +99,11 @@ require_once __DIR__ . '/../../app/includes/header.php';
                                 <?php echo renderStatusBadge(candidateStatusLabel($n['candidate_status']), candidateStatusBadgeClass($n['candidate_status'])); ?>
                                 <a class="btn btn-secondary" href="candidate_response.php?candidate_id=<?php echo (int) $n['candidate_id']; ?>">詳細を見る</a>
                             <?php endif; ?>
-                        <?php elseif ($n['type'] === 'approval_result'): ?>
+                        <?php elseif (in_array($n['type'], [
+                            'approval_result',
+                            'after_approval_cancel_approved',
+                            'after_approval_cancel_rejected',
+                        ], true)): ?>
                             <br>
                             <a class="btn btn-secondary" href="result.php">承認結果を確認する</a>
                         <?php endif; ?>

@@ -18,6 +18,7 @@
 //   approved     : 承認済み
 //   rejected     : 却下済み
 //   cancelled    : 申請者本人によるキャンセル済み
+//   cancelled_after_approval : 店長承認後キャンセル済み
 // ------------------------------------------------------------
 function leaveRequestStatusLabel(?string $status): string
 {
@@ -28,6 +29,7 @@ function leaveRequestStatusLabel(?string $status): string
         'approved'     => '承認済み',
         'rejected'     => '却下済み',
         'cancelled'    => 'キャンセル済み',
+        'cancelled_after_approval' => '承認後キャンセル済み',
     ];
     return $labels[$status] ?? (string) $status;
 }
@@ -41,6 +43,7 @@ function leaveRequestStatusBadgeClass(?string $status): string
         'approved'     => 'badge-success',
         'rejected'     => 'badge-danger',
         'cancelled'    => 'badge-inactive',
+        'cancelled_after_approval' => 'badge-inactive',
     ];
     return $classes[$status] ?? 'badge-inactive';
 }
@@ -116,8 +119,43 @@ function notificationTypeLabel(?string $type): string
         'no_candidate'        => '候補者なし',
         'approval_result'     => '承認結果',
         'leave_request_cancelled' => '申請キャンセル',
+        'after_approval_cancel_requested' => '承認後キャンセル申請',
+        'after_approval_cancel_approved'  => '承認後キャンセル承認',
+        'after_approval_cancel_rejected'  => '承認後キャンセル却下',
     ];
     return $labels[$type] ?? (string) $type;
+}
+
+// ------------------------------------------------------------
+// cancellation_requests.request_type / status
+// ------------------------------------------------------------
+function cancellationRequestTypeLabel(?string $requestType): string
+{
+    $labels = [
+        'requester_after_approval' => '休み申請者による承認後キャンセル',
+        'substitute_after_approval' => '代勤者による承認後キャンセル',
+    ];
+    return $labels[$requestType] ?? (string) $requestType;
+}
+
+function cancellationRequestStatusLabel(?string $status): string
+{
+    $labels = [
+        'pending'  => 'キャンセル申請中',
+        'approved' => 'キャンセル承認済み',
+        'rejected' => 'キャンセル却下済み',
+    ];
+    return $labels[$status] ?? (string) $status;
+}
+
+function cancellationRequestStatusBadgeClass(?string $status): string
+{
+    $classes = [
+        'pending'  => 'badge-warning',
+        'approved' => 'badge-success',
+        'rejected' => 'badge-danger',
+    ];
+    return $classes[$status] ?? 'badge-inactive';
 }
 
 // ------------------------------------------------------------
