@@ -37,23 +37,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
 
         $pdo->beginTransaction();
         try {
-            // candidate_employee_id と status = 'proposed' を条件にすることで、
-            // 他人の提案や、既に回答済みの提案を更新できないようにする。
             $stmt = $pdo->prepare(
-                "UPDATE substitute_candidates
-                 SET status = :status, responded_at = NOW()
-                 WHERE id = :id AND candidate_employee_id = :employee_id AND status = 'proposed'"
+                'SELECT sc.id, sc.status AS candidate_status, lr.status AS leave_status
+                 FROM substitute_candidates sc
+                 JOIN leave_requests lr ON lr.id = sc.leave_request_id
+                 WHERE sc.id = :id AND sc.candidate_employee_id = :employee_id
+                 FOR UPDATE'
             );
             $stmt->execute([
-                'status'      => $newStatus,
                 'id'          => $candidateId,
                 'employee_id' => $employeeId,
             ]);
+            $responseTarget = $stmt->fetch();
 
-            if ($stmt->rowCount() === 0) {
+            if ($responseTarget === false) {
                 $pdo->rollBack();
-                $errorMessage = 'この代勤提案は見つからないか、既に回答済みです。';
+                $errorMessage = 'この代勤提案は見つかりません。';
+            } elseif ($responseTarget['leave_status'] === 'cancelled') {
+                $pdo->rollBack();
+                $errorMessage = 'この代勤依頼は、休み申請がキャンセルされたため回答できません。';
+            } elseif (
+                !in_array($responseTarget['leave_status'], ['matching', 'no_candidate'], true)
+                || $responseTarget['candidate_status'] !== 'proposed'
+            ) {
+                $pdo->rollBack();
+                $errorMessage = 'この代勤提案は既に回答済みか、現在は回答できません。';
             } else {
+                $pdo->prepare(
+                    'UPDATE substitute_candidates
+                     SET status = :status, responded_at = NOW()
+                     WHERE id = :id'
+                )->execute([
+                    'status' => $newStatus,
+                    'id'     => $candidateId,
+                ]);
+
                 if ($response === 'available') {
                     createCandidateAvailableNotification($pdo, $candidateId);
                 }
@@ -95,7 +113,7 @@ $candidate   = null;
 if ($candidateId > 0) {
     $stmt = $pdo->prepare(
         'SELECT sc.id, sc.status, sc.match_reason, sc.responded_at,
-                lr.id AS leave_request_id, lr.reason AS leave_reason,
+                lr.id AS leave_request_id, lr.reason AS leave_reason, lr.status AS leave_status,
                 req.name AS requester_name,
                 s.shift_date, s.start_time, s.end_time, s.position
          FROM substitute_candidates sc
@@ -169,7 +187,14 @@ require_once __DIR__ . '/../../app/includes/header.php';
 </div>
 
 <div class="section">
-    <?php if ($candidate['status'] === 'proposed'): ?>
+    <?php if ($candidate['leave_status'] === 'cancelled'): ?>
+    <p class="page-description">この代勤依頼は、休み申請がキャンセルされたため回答できません。</p>
+    <?php elseif ($candidate['status'] === 'expired'): ?>
+    <p class="page-description">この代勤依頼は無効になっているため、回答は不要です。</p>
+    <?php elseif (
+        $candidate['status'] === 'proposed'
+        && in_array($candidate['leave_status'], ['matching', 'no_candidate'], true)
+    ): ?>
     <form method="post" action="candidate_response.php" style="display:inline;">
         <input type="hidden" name="action" value="respond">
         <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
@@ -182,8 +207,10 @@ require_once __DIR__ . '/../../app/includes/header.php';
         <input type="hidden" name="response" value="unavailable">
         <button type="submit" class="btn btn-secondary">代勤不可</button>
     </form>
-    <?php else: ?>
+    <?php elseif (in_array($candidate['status'], ['accepted', 'declined'], true)): ?>
     <p class="page-description">この提案には既に回答済みです（再回答はできません）。</p>
+    <?php else: ?>
+    <p class="page-description">この代勤依頼は既に処理済みのため、回答できません。</p>
     <?php endif; ?>
 </div>
 

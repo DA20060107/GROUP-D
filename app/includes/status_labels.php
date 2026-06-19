@@ -17,6 +17,7 @@
 //   no_candidate : 候補者なし（店長の手動対応・確認待ち）
 //   approved     : 承認済み
 //   rejected     : 却下済み
+//   cancelled    : 申請者本人によるキャンセル済み
 // ------------------------------------------------------------
 function leaveRequestStatusLabel(?string $status): string
 {
@@ -26,6 +27,7 @@ function leaveRequestStatusLabel(?string $status): string
         'no_candidate' => '候補者なし',
         'approved'     => '承認済み',
         'rejected'     => '却下済み',
+        'cancelled'    => 'キャンセル済み',
     ];
     return $labels[$status] ?? (string) $status;
 }
@@ -38,6 +40,7 @@ function leaveRequestStatusBadgeClass(?string $status): string
         'no_candidate' => 'badge-warning',
         'approved'     => 'badge-success',
         'rejected'     => 'badge-danger',
+        'cancelled'    => 'badge-inactive',
     ];
     return $classes[$status] ?? 'badge-inactive';
 }
@@ -112,6 +115,7 @@ function notificationTypeLabel(?string $type): string
         'candidate_available' => '代勤可能回答',
         'no_candidate'        => '候補者なし',
         'approval_result'     => '承認結果',
+        'leave_request_cancelled' => '申請キャンセル',
     ];
     return $labels[$type] ?? (string) $type;
 }

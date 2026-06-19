@@ -95,9 +95,9 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     shift_id    INT NOT NULL COMMENT '休みたいシフト',
     employee_id INT NOT NULL COMMENT '申請した従業員',
     reason      VARCHAR(255) NULL COMMENT '申請理由',
-    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
+    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled')
                 NOT NULL DEFAULT 'pending'
-                COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）',
+                COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 候補者なし, cancelled: 申請者本人によるキャンセル）',
     matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal'
                 COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
 CREATE TABLE IF NOT EXISTS notifications (
     id          INT AUTO_INCREMENT PRIMARY KEY,
     user_id     INT NOT NULL COMMENT '通知先ユーザー',
-    type        VARCHAR(50) NOT NULL COMMENT '通知種別（leave_request, substitute_request, candidate_offer, no_candidate, approval_result など）',
+    type        VARCHAR(50) NOT NULL COMMENT '通知種別（leave_request, substitute_request, candidate_offer, no_candidate, approval_result, leave_request_cancelled など）',
     title       VARCHAR(100) NOT NULL COMMENT '通知タイトル',
     message     TEXT NOT NULL COMMENT '通知内容',
     is_read     TINYINT(1) NOT NULL DEFAULT 0 COMMENT '既読フラグ',
@@ -217,9 +217,9 @@ ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
 
 ALTER TABLE leave_requests
-    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate')
+    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled')
         NOT NULL DEFAULT 'pending'
-        COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 代勤候補が見つからなかった状態）';
+        COMMENT '申請状態（matching: 代勤候補回答待ち, no_candidate: 候補者なし, cancelled: 申請者本人によるキャンセル）';
 
 -- ------------------------------------------------------------
 -- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）

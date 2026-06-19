@@ -32,7 +32,26 @@ $newLeaveRequestForm = [
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if ($action === 'create') {
+    if ($action === 'cancel') {
+        $leaveRequestId = (int) ($_POST['leave_request_id'] ?? 0);
+
+        if ($leaveRequestId <= 0) {
+            $errorMessage = 'キャンセルする休み申請を確認できませんでした。';
+        } else {
+            $cancelResult = cancelLeaveRequest($pdo, $leaveRequestId, $employeeId);
+
+            if ($cancelResult === 'cancelled') {
+                header('Location: leave_request.php?msg=cancelled');
+                exit;
+            }
+
+            if ($cancelResult === 'not_found') {
+                $errorMessage = '指定された休み申請が見つかりません。自分の申請のみキャンセルできます。';
+            } else {
+                $errorMessage = 'この休み申請は、既に処理済みのためキャンセルできません。';
+            }
+        }
+    } elseif ($action === 'create') {
         $shiftId = (int) ($_POST['shift_id'] ?? 0);
         $reason  = trim($_POST['reason'] ?? '');
 
@@ -56,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // 同じシフトに対する休み申請の重複を防ぐ
                 $stmt = $pdo->prepare(
                     "SELECT COUNT(*) FROM leave_requests
-                     WHERE shift_id = :shift_id AND status IN ('pending', 'matching')"
+                     WHERE shift_id = :shift_id AND status IN ('pending', 'matching', 'no_candidate')"
                 );
                 $stmt->execute(['shift_id' => $shiftId]);
 
@@ -101,6 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 // ------------------------------------------------------------
 if (isset($_GET['msg']) && $_GET['msg'] === 'created') {
     $successMessage = '休み申請を登録しました。代勤候補の抽出を行いました。';
+} elseif (isset($_GET['msg']) && $_GET['msg'] === 'cancelled') {
+    $successMessage = '休み申請をキャンセルしました。';
 }
 
 // ------------------------------------------------------------
@@ -169,6 +190,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
 
 <div class="section">
     <h2>申請済みの休み申請</h2>
+    <p class="page-description">店長が承認・却下する前の申請のみキャンセルできます。</p>
     <table>
         <thead>
             <tr>
@@ -177,12 +199,13 @@ require_once __DIR__ . '/../../app/includes/header.php';
                 <th>終了時刻</th>
                 <th>申請理由</th>
                 <th>状態</th>
+                <th>操作</th>
             </tr>
         </thead>
         <tbody>
             <?php if (empty($myLeaveRequests)): ?>
             <tr>
-                <td colspan="5">申請済みの休み申請はありません。</td>
+                <td colspan="6">申請済みの休み申請はありません。</td>
             </tr>
             <?php else: ?>
                 <?php foreach ($myLeaveRequests as $lr): ?>
@@ -192,6 +215,17 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <td><?php echo htmlspecialchars(substr($lr['end_time'], 0, 5)); ?></td>
                     <td><?php echo htmlspecialchars($lr['reason'] ?? ''); ?></td>
                     <td><?php echo renderStatusBadge(leaveRequestStatusLabel($lr['status']), leaveRequestStatusBadgeClass($lr['status'])); ?></td>
+                    <td>
+                        <?php if (in_array($lr['status'], ['matching', 'no_candidate'], true)): ?>
+                        <form method="post" action="leave_request.php">
+                            <input type="hidden" name="action" value="cancel">
+                            <input type="hidden" name="leave_request_id" value="<?php echo (int) $lr['id']; ?>">
+                            <button type="submit" class="btn btn-secondary">キャンセルする</button>
+                        </form>
+                        <?php else: ?>
+                            -
+                        <?php endif; ?>
+                    </td>
                 </tr>
                 <?php endforeach; ?>
             <?php endif; ?>

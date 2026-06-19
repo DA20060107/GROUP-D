@@ -34,9 +34,11 @@ function getLeaveRequestShift(PDO $pdo, int $leaveRequestId)
 {
     $stmt = $pdo->prepare(
         'SELECT lr.id AS leave_request_id, lr.employee_id AS requester_employee_id,
+                req.name AS requester_name,
                 s.id AS shift_id, s.shift_date, s.start_time, s.end_time, s.position
          FROM leave_requests lr
          JOIN shifts s ON s.id = lr.shift_id
+         JOIN employees req ON req.id = lr.employee_id
          WHERE lr.id = :leave_request_id'
     );
     $stmt->execute(['leave_request_id' => $leaveRequestId]);
@@ -542,6 +544,144 @@ function processSubstituteMatching(PDO $pdo, int $leaveRequestId): string
         ->execute(['status' => $newStatus, 'id' => $leaveRequestId]);
 
     return $newStatus;
+}
+
+/**
+ * 休み申請キャンセル時に、関連する代勤候補者と店長へ通知を作成する
+ *
+ * 同じ休み申請・通知種別の通知が既に存在する場合は重複作成しない。
+ */
+function createLeaveRequestCancellationNotifications(PDO $pdo, int $leaveRequestId): void
+{
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+    if ($target === null) {
+        return;
+    }
+
+    $shiftDateLabel = date('n月j日', strtotime($target['shift_date']));
+    $startLabel     = substr($target['start_time'], 0, 5);
+    $endLabel       = substr($target['end_time'], 0, 5);
+
+    $candidateMessage = sprintf(
+        '%sの%s〜%sのシフトに関する代勤依頼は、休み申請者によりキャンセルされました。',
+        $shiftDateLabel,
+        $startLabel,
+        $endLabel
+    );
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+         SELECT DISTINCT u.id, 'leave_request_cancelled', '代勤依頼がキャンセルされました',
+                :message, 0, :leave_request_id_notification
+         FROM substitute_candidates sc
+         JOIN users u
+           ON u.role = 'employee'
+          AND u.employee_id = sc.candidate_employee_id
+         WHERE sc.leave_request_id = :leave_request_id_candidate
+           AND NOT EXISTS (
+               SELECT 1 FROM notifications n
+               WHERE n.user_id = u.id
+                 AND n.type = 'leave_request_cancelled'
+                 AND n.related_leave_request_id = :leave_request_id_check
+           )"
+    );
+    $stmt->execute([
+        'message'                       => $candidateMessage,
+        'leave_request_id_notification' => $leaveRequestId,
+        'leave_request_id_candidate'    => $leaveRequestId,
+        'leave_request_id_check'        => $leaveRequestId,
+    ]);
+
+    $managerMessage = sprintf(
+        '%sさんの%sの%s〜%sの休み申請は、本人によりキャンセルされました。',
+        $target['requester_name'],
+        $shiftDateLabel,
+        $startLabel,
+        $endLabel
+    );
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+         SELECT u.id, 'leave_request_cancelled', '休み申請がキャンセルされました',
+                :message, 0, :leave_request_id_notification
+         FROM users u
+         WHERE u.role = 'manager'
+           AND NOT EXISTS (
+               SELECT 1 FROM notifications n
+               WHERE n.user_id = u.id
+                 AND n.type = 'leave_request_cancelled'
+                 AND n.related_leave_request_id = :leave_request_id_check
+           )"
+    );
+    $stmt->execute([
+        'message'                       => $managerMessage,
+        'leave_request_id_notification' => $leaveRequestId,
+        'leave_request_id_check'        => $leaveRequestId,
+    ]);
+}
+
+/**
+ * 従業員本人の休み申請を、店長処理前にキャンセルする
+ *
+ * キャンセル可能な状態は matching / no_candidate のみ。
+ * 同時に関連候補者をすべて expired にし、対象シフトを scheduled に戻す。
+ *
+ * @return string cancelled / not_found / not_cancellable
+ */
+function cancelLeaveRequest(PDO $pdo, int $leaveRequestId, int $employeeId): string
+{
+    $pdo->beginTransaction();
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT id, shift_id, status
+             FROM leave_requests
+             WHERE id = :leave_request_id AND employee_id = :employee_id
+             FOR UPDATE'
+        );
+        $stmt->execute([
+            'leave_request_id' => $leaveRequestId,
+            'employee_id'      => $employeeId,
+        ]);
+        $leaveRequest = $stmt->fetch();
+
+        if ($leaveRequest === false) {
+            $pdo->rollBack();
+            return 'not_found';
+        }
+
+        if (!in_array($leaveRequest['status'], ['matching', 'no_candidate'], true)) {
+            $pdo->rollBack();
+            return 'not_cancellable';
+        }
+
+        $pdo->prepare("UPDATE leave_requests SET status = 'cancelled' WHERE id = :id")
+            ->execute(['id' => $leaveRequestId]);
+
+        // キャンセル理由にかかわらず全候補者を無効化し、古い回答リンクを使えなくする。
+        $pdo->prepare(
+            "UPDATE substitute_candidates
+             SET status = 'expired'
+             WHERE leave_request_id = :leave_request_id"
+        )->execute(['leave_request_id' => $leaveRequestId]);
+
+        // 店長承認前のキャンセルなので、元の担当者のシフトを再び申請可能な予定状態へ戻す。
+        $pdo->prepare(
+            "UPDATE shifts
+             SET status = 'scheduled'
+             WHERE id = :shift_id AND status = 'leave_requested'"
+        )->execute(['shift_id' => $leaveRequest['shift_id']]);
+
+        createLeaveRequestCancellationNotifications($pdo, $leaveRequestId);
+
+        $pdo->commit();
+        return 'cancelled';
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
 }
 
 /**

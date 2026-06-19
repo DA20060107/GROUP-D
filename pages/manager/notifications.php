@@ -33,7 +33,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
 // ------------------------------------------------------------
 // 自分（店長）宛の通知一覧
 // ------------------------------------------------------------
-$stmt = $pdo->prepare('SELECT * FROM notifications WHERE user_id = :user_id ORDER BY created_at DESC');
+$stmt = $pdo->prepare(
+    'SELECT n.*, lr.status AS leave_status
+     FROM notifications n
+     LEFT JOIN leave_requests lr ON lr.id = n.related_leave_request_id
+     WHERE n.user_id = :user_id
+     ORDER BY n.created_at DESC'
+);
 $stmt->execute(['user_id' => $userId]);
 $notifications = $stmt->fetchAll();
 
@@ -69,7 +75,13 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     <td><?php echo htmlspecialchars($n['title']); ?></td>
                     <td>
                         <?php echo nl2br(htmlspecialchars($n['message'])); ?>
-                        <?php if ($n['type'] === 'candidate_available'): ?>
+                        <?php if (
+                            in_array($n['type'], ['candidate_available', 'no_candidate'], true)
+                            && $n['leave_status'] === 'cancelled'
+                        ): ?>
+                            <br>
+                            <?php echo renderStatusBadge('キャンセル済み・対応不要', 'badge-inactive'); ?>
+                        <?php elseif ($n['type'] === 'candidate_available'): ?>
                             <br>
                             <?php if ($n['related_leave_request_id'] !== null): ?>
                                 <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>

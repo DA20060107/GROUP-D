@@ -42,8 +42,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_
 // 自分自身の代勤提案（candidate_id・回答状況）を取得する。
 // ------------------------------------------------------------
 $stmt = $pdo->prepare(
-    'SELECT n.*, sc.id AS candidate_id, sc.status AS candidate_status
+    'SELECT n.*, sc.id AS candidate_id, sc.status AS candidate_status,
+            lr.status AS leave_status
      FROM notifications n
+     LEFT JOIN leave_requests lr
+        ON lr.id = n.related_leave_request_id
      LEFT JOIN substitute_candidates sc
          ON sc.leave_request_id = n.related_leave_request_id
         AND sc.candidate_employee_id = :employee_id
@@ -87,7 +90,9 @@ require_once __DIR__ . '/../../app/includes/header.php';
                         <?php echo nl2br(htmlspecialchars($n['message'])); ?>
                         <?php if ($n['type'] === 'substitute_request' && $n['candidate_id'] !== null): ?>
                             <br>
-                            <?php if ($n['candidate_status'] === 'proposed'): ?>
+                            <?php if ($n['leave_status'] === 'cancelled'): ?>
+                                <?php echo renderStatusBadge('キャンセル済み・回答不要', 'badge-inactive'); ?>
+                            <?php elseif ($n['candidate_status'] === 'proposed'): ?>
                                 <?php echo renderStatusBadge('未回答', 'badge-active'); ?>
                                 <a class="btn btn-secondary" href="candidate_response.php?candidate_id=<?php echo (int) $n['candidate_id']; ?>">回答する</a>
                             <?php else: ?>

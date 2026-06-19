@@ -206,13 +206,14 @@ foreach ($pendingLeaveRequests as &$lr) {
 unset($lr);
 
 // ------------------------------------------------------------
-// 処理済みの休み申請一覧（承認済み・却下）
+// 処理済みの休み申請一覧（承認済み・却下・本人キャンセル済み）
 // ------------------------------------------------------------
 $processedLeaveRequests = $pdo->query(
     "SELECT lr.id AS leave_request_id, lr.reason, lr.status AS leave_status,
             s.shift_date, s.start_time, s.end_time, s.position,
             req.name AS requester_name,
-            a.status AS approval_status, a.approved_at,
+            a.status AS approval_status,
+            COALESCE(a.approved_at, lr.updated_at) AS processed_at,
             sub.name AS substitute_name
      FROM leave_requests lr
      JOIN shifts s ON s.id = lr.shift_id
@@ -220,8 +221,8 @@ $processedLeaveRequests = $pdo->query(
      LEFT JOIN approvals a ON a.leave_request_id = lr.id
      LEFT JOIN substitute_candidates sc ON sc.id = a.substitute_candidate_id
      LEFT JOIN employees sub ON sub.id = sc.candidate_employee_id
-     WHERE lr.status IN ('approved', 'rejected')
-     ORDER BY a.approved_at DESC, lr.id DESC"
+     WHERE lr.status IN ('approved', 'rejected', 'cancelled')
+     ORDER BY processed_at DESC, lr.id DESC"
 )->fetchAll();
 
 require_once __DIR__ . '/../../app/includes/header.php';
@@ -352,7 +353,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
             <?php else: ?>
                 <?php foreach ($processedLeaveRequests as $lr): ?>
                 <tr id="lr-<?php echo (int) $lr['leave_request_id']; ?>">
-                    <td><?php echo htmlspecialchars($lr['approved_at'] ?? ''); ?></td>
+                    <td><?php echo htmlspecialchars($lr['processed_at'] ?? ''); ?></td>
                     <td><?php echo htmlspecialchars($lr['requester_name']); ?></td>
                     <td>
                         <?php echo htmlspecialchars($lr['shift_date'] . ' ' . substr($lr['start_time'], 0, 5) . '-' . substr($lr['end_time'], 0, 5)); ?>
