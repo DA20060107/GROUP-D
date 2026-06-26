@@ -12,12 +12,13 @@ session_start();
 <body>
     <h1>店長 新規登録</h1>
 
-    <form action="manager_registar_action.php" method="POST">
+    <form action="./manager_registar_action.php" method="POST">
         <label>名前：</label>
         <input type="text" name="name" required><br><br>
 
         <label>ログインID:</label>
         <input type="text" id="username" name="username" placeholder="例: manager06" required><br><br>
+
         
         <label>パスワード：</label>
         <input type="password" name="password" required><br><br>
