@@ -57,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
                 $pdo->rollBack();
                 $errorMessage = 'この代勤依頼は、休み申請がキャンセルされたため回答できません。';
             } elseif (
-                !in_array($responseTarget['leave_status'], ['matching', 'no_candidate'], true)
+                !in_array($responseTarget['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)
                 || $responseTarget['candidate_status'] !== 'proposed'
             ) {
                 $pdo->rollBack();
@@ -193,7 +193,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
     <p class="page-description">この代勤依頼は無効になっているため、回答は不要です。</p>
     <?php elseif (
         $candidate['status'] === 'proposed'
-        && in_array($candidate['leave_status'], ['matching', 'no_candidate'], true)
+        && in_array($candidate['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)
     ): ?>
     <form method="post" action="candidate_response.php" style="display:inline;">
         <input type="hidden" name="action" value="respond">

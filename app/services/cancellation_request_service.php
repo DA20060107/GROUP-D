@@ -596,6 +596,17 @@ function decideSubstituteAfterApprovalCancellationRequest(
                 (int) $target['id']
             );
 
+            // 代勤者キャンセル承認直後に、代勤候補を自動で再抽出する。
+            // キャンセルした代勤者本人は必ず除外する（declined や休み申請者本人は
+            // retrySubstituteMatching 内で除外される）。状態は replacement_pending を維持し、
+            // 新しい候補者が見つかれば通知、見つからなければ店長へ手動対応通知を作成する。
+            retrySubstituteMatching(
+                $pdo,
+                (int) $target['id'],
+                [$substituteEmployeeId],
+                'substitute_cancel'
+            );
+
             $pdo->commit();
             return 'approved';
         }

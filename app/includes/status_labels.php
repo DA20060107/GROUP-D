@@ -130,6 +130,7 @@ function notificationTypeLabel(?string $type): string
         'substitute_cancel_approved'      => '代勤キャンセル承認',
         'substitute_cancel_rejected'      => '代勤キャンセル却下',
         'replacement_pending'             => '代勤者再調整中',
+        'rematch_no_candidate'            => '再抽出候補者なし',
     ];
     return $labels[$type] ?? (string) $type;
 }

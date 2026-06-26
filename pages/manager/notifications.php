@@ -88,13 +88,13 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             <?php else: ?>
                                 <a class="btn btn-secondary" href="approvals.php">承認画面で確認する</a>
                             <?php endif; ?>
-                        <?php elseif ($n['type'] === 'no_candidate'): ?>
+                        <?php elseif (in_array($n['type'], ['no_candidate', 'rematch_no_candidate'], true)): ?>
                             <br>
                             <?php echo renderStatusBadge('手動対応が必要', 'badge-warning'); ?>
                             <?php if ($n['related_leave_request_id'] !== null): ?>
-                                <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>
+                                <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認・再抽出する</a>
                             <?php else: ?>
-                                <a class="btn btn-secondary" href="approvals.php">承認画面で確認する</a>
+                                <a class="btn btn-secondary" href="approvals.php">承認画面で確認・再抽出する</a>
                             <?php endif; ?>
                         <?php elseif (in_array($n['type'], [
                             'after_approval_cancel_requested',

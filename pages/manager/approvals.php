@@ -44,11 +44,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $pdo->beginTransaction();
         try {
-            // 未処理（matching または no_candidate）の休み申請であることを確認する
+            // 未処理（matching / no_candidate / replacement_pending）の休み申請であることを確認する
+            // replacement_pending は代勤者キャンセル後の再調整中で、新しい代勤者を承認できる
             $stmt = $pdo->prepare(
                 "SELECT lr.id, lr.shift_id
                  FROM leave_requests lr
-                 WHERE lr.id = :id AND lr.status IN ('matching', 'no_candidate')
+                 WHERE lr.id = :id AND lr.status IN ('matching', 'no_candidate', 'replacement_pending')
                  FOR UPDATE"
             );
             $stmt->execute(['id' => $leaveRequestId]);
@@ -173,6 +174,18 @@ if (isset($_GET['msg'])) {
         case 'rejected':
             $successMessage = '休み申請を却下しました。';
             break;
+        case 'rematch_found':
+            $successMessage = '代勤候補を再抽出しました。候補者が見つかり、代勤依頼を作成しました。';
+            break;
+        case 'rematch_none':
+            $successMessage = '代勤候補を再抽出しましたが、条件に合う候補者が見つかりませんでした。';
+            break;
+        case 'rematch_invalid':
+            $errorMessage = 'この休み申請は再抽出の対象ではありません（状態が変わった可能性があります）。';
+            break;
+        case 'rematch_error':
+            $errorMessage = '再抽出の対象を確認できませんでした。';
+            break;
     }
 }
 
@@ -186,7 +199,7 @@ $pendingLeaveRequests = $pdo->query(
      FROM leave_requests lr
      JOIN shifts s ON s.id = lr.shift_id
      JOIN employees req ON req.id = lr.employee_id
-     WHERE lr.status IN ('matching', 'no_candidate')
+     WHERE lr.status IN ('matching', 'no_candidate', 'replacement_pending')
      ORDER BY lr.created_at"
 )->fetchAll();
 
@@ -227,7 +240,9 @@ $processedLeaveRequests = $pdo->query(
      FROM leave_requests lr
      JOIN shifts s ON s.id = lr.shift_id
      JOIN employees req ON req.id = lr.employee_id
-     LEFT JOIN approvals a ON a.leave_request_id = lr.id
+     LEFT JOIN approvals a ON a.id = (
+         SELECT MAX(a2.id) FROM approvals a2 WHERE a2.leave_request_id = lr.id
+     )
      LEFT JOIN substitute_candidates sc ON sc.id = a.substitute_candidate_id
      LEFT JOIN employees sub ON sub.id = sc.candidate_employee_id
      WHERE lr.status IN ('approved', 'rejected', 'cancelled', 'cancelled_after_approval')
@@ -289,7 +304,11 @@ require_once __DIR__ . '/../../app/includes/header.php';
             </table>
 
             <?php if (empty($lr['candidates'])): ?>
-                <p class="page-description">代勤候補が見つかりませんでした。手動で調整するか、休み申請を却下してください。</p>
+                <?php if ($lr['leave_status'] === 'replacement_pending'): ?>
+                <p class="page-description">代勤者再調整中です。代勤候補が見つかりませんでした。下の「代勤候補を再抽出」で再度候補を探せます。</p>
+                <?php else: ?>
+                <p class="page-description">代勤候補が見つかりませんでした。下の「代勤候補を再抽出」で再度候補を探すか、休み申請を却下してください。</p>
+                <?php endif; ?>
             <?php else: ?>
             <table>
                 <thead>
@@ -332,11 +351,21 @@ require_once __DIR__ . '/../../app/includes/header.php';
             </table>
             <?php endif; ?>
 
+            <?php if (in_array($lr['leave_status'], ['no_candidate', 'replacement_pending'], true)): ?>
+            <form method="post" action="rematch_leave_request.php" style="display:inline;">
+                <input type="hidden" name="action" value="rematch">
+                <input type="hidden" name="leave_request_id" value="<?php echo (int) $lr['leave_request_id']; ?>">
+                <button type="submit" class="btn">代勤候補を再抽出</button>
+            </form>
+            <?php endif; ?>
+
+            <?php if (in_array($lr['leave_status'], ['matching', 'no_candidate'], true)): ?>
             <form method="post" action="approvals.php" style="display:inline;">
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="leave_request_id" value="<?php echo (int) $lr['leave_request_id']; ?>">
                 <button type="submit" class="btn btn-secondary">この休み申請を却下</button>
             </form>
+            <?php endif; ?>
         </div>
         <?php endforeach; ?>
     <?php endif; ?>

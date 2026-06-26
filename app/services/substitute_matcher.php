@@ -546,6 +546,311 @@ function processSubstituteMatching(PDO $pdo, int $leaveRequestId): string
     return $newStatus;
 }
 
+// ------------------------------------------------------------
+// 代勤候補の再抽出（Step1）
+//
+// 初回抽出（processSubstituteMatching / createSubstituteCandidates）とは別に、
+// 以下のタイミングで「既存の抽出条件・スコア計算を再利用した再抽出」を行う。
+//   - 代勤者の承認後キャンセルが店長承認されたとき（自動再抽出）
+//   - 店長が no_candidate / replacement_pending の休み申請を手動再抽出するとき
+//
+// 再抽出では、必須条件に加えて「休み申請者本人・キャンセルした代勤者・
+// 過去に declined と回答した従業員」を必ず除外する。既存候補レコードは、
+// expired のものを proposed へ再活性化し、proposed/accepted のものはそのまま
+// 維持する（同じ候補者への重複通知は作成しない）。
+//
+// 注意: これらの関数は内部でトランザクションを開始しない。呼び出し側が
+// 必要に応じてトランザクションで囲むこと（キャンセル承認処理など、既に
+// トランザクション内から呼ばれる場合があるため）。
+// ------------------------------------------------------------
+
+/** 同じ休み申請で過去に「代勤不可（declined）」と回答した従業員IDの配列を返す */
+function getDeclinedEmployeeIdsForLeaveRequest(PDO $pdo, int $leaveRequestId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT candidate_employee_id
+         FROM substitute_candidates
+         WHERE leave_request_id = :leave_request_id AND status = 'declined'"
+    );
+    $stmt->execute(['leave_request_id' => $leaveRequestId]);
+
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * 同じ休み申請で、承認後代勤キャンセル申請（substitute_after_approval）が
+ * 店長に承認された従業員IDの配列を返す
+ *
+ * 一度代勤を引き受けて承認後にキャンセルした従業員は、後続の再抽出で
+ * 再び候補にしないために使う（現在キャンセルした本人だけでなく、過去の
+ * キャンセル者も対象）。
+ */
+function getApprovedSubstituteCancellationEmployeeIdsForLeaveRequest(PDO $pdo, int $leaveRequestId): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT DISTINCT requested_by_employee_id
+         FROM cancellation_requests
+         WHERE leave_request_id = :leave_request_id
+           AND request_type = 'substitute_after_approval'
+           AND status = 'approved'"
+    );
+    $stmt->execute(['leave_request_id' => $leaveRequestId]);
+
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * 指定した休み申請・従業員の既存の代勤候補レコード（最新1件）を返す
+ *
+ * @return array|null id, status を含む連想配列。存在しない場合は null。
+ */
+function getExistingCandidateStatus(PDO $pdo, int $leaveRequestId, int $employeeId): ?array
+{
+    $stmt = $pdo->prepare(
+        'SELECT id, status
+         FROM substitute_candidates
+         WHERE leave_request_id = :leave_request_id AND candidate_employee_id = :employee_id
+         ORDER BY id DESC
+         LIMIT 1'
+    );
+    $stmt->execute([
+        'leave_request_id' => $leaveRequestId,
+        'employee_id'      => $employeeId,
+    ]);
+    $row = $stmt->fetch();
+
+    return $row === false ? null : $row;
+}
+
+/**
+ * 再抽出用の候補抽出（必須条件 ＋ 除外条件）
+ *
+ * findSubstituteCandidates() との違い:
+ *   - 「既に候補登録済みか」では除外しない（expired を再提案できるようにするため）
+ *   - 代わりに declined の従業員と、$excludeEmployeeIds の従業員を必ず除外する
+ *
+ * @return array employee_id, name, position, skill_level, hire_date を含む配列
+ */
+function findSubstituteCandidatesForRetry(PDO $pdo, int $leaveRequestId, array $excludeEmployeeIds = []): array
+{
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+    if ($target === null) {
+        return [];
+    }
+
+    $params = [
+        'requester_employee_id'     => $target['requester_employee_id'],
+        'shift_date'                => $target['shift_date'],
+        'start_time'                => $target['start_time'],
+        'end_time'                  => $target['end_time'],
+        'shift_date2'               => $target['shift_date'],
+        'start_time2'               => $target['start_time'],
+        'end_time2'                 => $target['end_time'],
+        'leave_request_id_declined' => $leaveRequestId,
+    ];
+
+    $excludeSql = '';
+    $excludeEmployeeIds = array_values(array_unique(array_map('intval', $excludeEmployeeIds)));
+    if (!empty($excludeEmployeeIds)) {
+        $placeholders = [];
+        foreach ($excludeEmployeeIds as $i => $eid) {
+            $key = 'ex' . $i;
+            $placeholders[] = ':' . $key;
+            $params[$key]   = $eid;
+        }
+        $excludeSql = ' AND e.id NOT IN (' . implode(', ', $placeholders) . ')';
+    }
+
+    $sql =
+        'SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.skill_level, e.hire_date
+         FROM employees e
+         JOIN availability a ON a.employee_id = e.id
+         WHERE e.is_active = 1
+           AND e.id <> :requester_employee_id
+           AND a.available_date = :shift_date
+           AND a.start_time <= :start_time
+           AND a.end_time >= :end_time
+           AND NOT EXISTS (
+               SELECT 1 FROM shifts s2
+               WHERE s2.employee_id = e.id
+                 AND s2.shift_date = :shift_date2
+                 AND s2.status <> "cancelled"
+                 AND NOT (s2.end_time <= :start_time2 OR s2.start_time >= :end_time2)
+           )
+           AND NOT EXISTS (
+               SELECT 1 FROM substitute_candidates scd
+               WHERE scd.leave_request_id = :leave_request_id_declined
+                 AND scd.candidate_employee_id = e.id
+                 AND scd.status = "declined"
+           )'
+        . $excludeSql .
+        ' ORDER BY e.id';
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+
+    return $stmt->fetchAll();
+}
+
+/**
+ * 代勤候補レコードを新規作成、または expired を proposed へ再活性化する
+ *
+ * @return string created / reactivated / proposed / accepted / declined
+ *                 （proposed/accepted/declined は既存状態を維持した場合）
+ */
+function createOrReactivateCandidate(PDO $pdo, int $leaveRequestId, int $employeeId, int $score, string $reason): string
+{
+    $existing = getExistingCandidateStatus($pdo, $leaveRequestId, $employeeId);
+
+    if ($existing === null) {
+        $pdo->prepare(
+            "INSERT INTO substitute_candidates
+                (leave_request_id, candidate_employee_id, status, match_score, match_reason, matched_at)
+             VALUES (:leave_request_id, :employee_id, 'proposed', :score, :reason, NOW())"
+        )->execute([
+            'leave_request_id' => $leaveRequestId,
+            'employee_id'      => $employeeId,
+            'score'            => $score,
+            'reason'           => $reason,
+        ]);
+        return 'created';
+    }
+
+    if ($existing['status'] === 'expired') {
+        $pdo->prepare(
+            "UPDATE substitute_candidates
+             SET status = 'proposed', responded_at = NULL,
+                 match_score = :score, match_reason = :reason, matched_at = NOW()
+             WHERE id = :id"
+        )->execute([
+            'score'  => $score,
+            'reason' => $reason,
+            'id'     => $existing['id'],
+        ]);
+        return 'reactivated';
+    }
+
+    // proposed / accepted / declined はそのまま維持する
+    return (string) $existing['status'];
+}
+
+/**
+ * 再抽出で候補者が見つからなかった場合に、店長へ「再抽出候補者なし」通知を作成する
+ */
+function createRematchNoCandidateNotification(PDO $pdo, int $leaveRequestId): void
+{
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+    if ($target === null) {
+        return;
+    }
+
+    $message = sprintf(
+        '%sの%s〜%sのシフトについて代勤候補を再抽出しましたが、条件に合う候補者が見つかりませんでした。手動で対応してください。',
+        $target['shift_date'],
+        substr($target['start_time'], 0, 5),
+        substr($target['end_time'], 0, 5)
+    );
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+         SELECT u.id, 'rematch_no_candidate', '代勤候補が見つかりませんでした', :message, 0, :leave_request_id
+         FROM users u
+         WHERE u.role = 'manager'"
+    );
+    $stmt->execute([
+        'message'          => $message,
+        'leave_request_id' => $leaveRequestId,
+    ]);
+}
+
+/**
+ * 代勤候補を再抽出する（既存の抽出条件・スコア計算を再利用）
+ *
+ * - 休み申請の matching_mode を使ってスコア・抽出理由を計算する
+ * - 必須条件 ＋ 除外条件（休み申請者本人・declined・$excludeEmployeeIds）で抽出する
+ * - 既存 expired レコードは proposed へ再活性化、未登録は新規作成する
+ * - proposed/accepted の既存候補はそのまま維持する
+ * - 新たに proposed になった（created/reactivated）候補者へ代勤依頼通知を作成する
+ *   （createCandidateNotifications の重複ガードにより、同じ候補者への二重通知は作成されない）
+ * - 有効な候補が1人もいなければ、店長へ再抽出候補者なし通知を作成する
+ *
+ * この関数は内部でトランザクションを開始しない（呼び出し側で囲むこと）。
+ *
+ * @return array matched_count, notified_count, excluded_employee_ids, no_candidate
+ */
+function retrySubstituteMatching(PDO $pdo, int $leaveRequestId, array $excludeEmployeeIds = [], string $trigger = 'manual'): array
+{
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+    if ($target === null) {
+        return [
+            'matched_count'         => 0,
+            'notified_count'        => 0,
+            'excluded_employee_ids' => array_values(array_map('intval', $excludeEmployeeIds)),
+            'no_candidate'          => true,
+        ];
+    }
+
+    // 休み申請に記録された抽出モードを使う（未設定・不正な場合は normal）
+    $modeStmt = $pdo->prepare('SELECT matching_mode FROM leave_requests WHERE id = :id');
+    $modeStmt->execute(['id' => $leaveRequestId]);
+    $mode = (string) $modeStmt->fetchColumn();
+    if (!in_array($mode, getMatchingModes(), true)) {
+        $mode = 'normal';
+    }
+
+    $declinedIds = getDeclinedEmployeeIdsForLeaveRequest($pdo, $leaveRequestId);
+    // 同じ休み申請で承認後代勤キャンセルが店長に承認された従業員（過去のキャンセル者を含む）も除外する
+    $approvedCancelIds = getApprovedSubstituteCancellationEmployeeIdsForLeaveRequest($pdo, $leaveRequestId);
+    $excludeIds  = array_values(array_unique(array_merge(
+        array_map('intval', $excludeEmployeeIds),
+        $declinedIds,
+        $approvedCancelIds
+    )));
+
+    $candidates = findSubstituteCandidatesForRetry($pdo, $leaveRequestId, $excludeIds);
+
+    $toNotify     = [];
+    $matchedCount = 0;
+
+    foreach ($candidates as $candidate) {
+        $employeeId   = (int) $candidate['employee_id'];
+        $extraSeconds = getTightestAvailabilityExtraSeconds($pdo, $employeeId, $target);
+        $scoreResult  = calculateCandidateScore($candidate, $target, $extraSeconds, $mode);
+
+        $outcome = createOrReactivateCandidate(
+            $pdo,
+            $leaveRequestId,
+            $employeeId,
+            $scoreResult['score'],
+            $scoreResult['reason']
+        );
+
+        if (in_array($outcome, ['created', 'reactivated'], true)) {
+            $toNotify[] = ['employee_id' => $employeeId];
+            $matchedCount++;
+        } elseif (in_array($outcome, ['proposed', 'accepted'], true)) {
+            // 既に依頼中・回答済みの候補者も「有効な候補がいる」状態として数える
+            $matchedCount++;
+        }
+    }
+
+    if (!empty($toNotify)) {
+        createCandidateNotifications($pdo, $leaveRequestId, $toNotify);
+    }
+
+    $noCandidate = ($matchedCount === 0);
+    if ($noCandidate) {
+        createRematchNoCandidateNotification($pdo, $leaveRequestId);
+    }
+
+    return [
+        'matched_count'         => $matchedCount,
+        'notified_count'        => count($toNotify),
+        'excluded_employee_ids' => $excludeIds,
+        'no_candidate'          => $noCandidate,
+    ];
+}
+
 /**
  * 休み申請キャンセル時に、関連する代勤候補者と店長へ通知を作成する
  *
