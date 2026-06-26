@@ -5,11 +5,10 @@
 -- 必要に応じて英数字のDB名（例: shift_management）へ変更可能です。
 -- ============================================================
 
-CREATE DATABASE IF NOT EXISTS `シフト管理システム`
+CREATE DATABASE IF NOT EXISTS `shift_matching_system`
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE `シフト管理システム`;
 
 -- ------------------------------------------------------------
 -- employees: 従業員情報

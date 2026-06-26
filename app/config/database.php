@@ -15,7 +15,7 @@
  */
 
 $dbHost    = 'localhost';
-$dbName    = 'シフト管理システム';
+$dbName    = 'shift_matching_system';
 $dbUser    = 'root';
 $dbPass    = '';
 $dbCharset = 'utf8mb4';
