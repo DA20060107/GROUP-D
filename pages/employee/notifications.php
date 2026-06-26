@@ -103,9 +103,16 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             'approval_result',
                             'after_approval_cancel_approved',
                             'after_approval_cancel_rejected',
+                            'replacement_pending',
                         ], true)): ?>
                             <br>
                             <a class="btn btn-secondary" href="result.php">承認結果を確認する</a>
+                        <?php elseif (in_array($n['type'], [
+                            'substitute_cancel_approved',
+                            'substitute_cancel_rejected',
+                        ], true)): ?>
+                            <br>
+                            <a class="btn btn-secondary" href="shifts.php">シフトを確認する</a>
                         <?php endif; ?>
                     </td>
                     <td>

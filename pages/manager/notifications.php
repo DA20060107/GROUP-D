@@ -96,7 +96,10 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             <?php else: ?>
                                 <a class="btn btn-secondary" href="approvals.php">承認画面で確認する</a>
                             <?php endif; ?>
-                        <?php elseif ($n['type'] === 'after_approval_cancel_requested'): ?>
+                        <?php elseif (in_array($n['type'], [
+                            'after_approval_cancel_requested',
+                            'substitute_cancel_requested',
+                        ], true)): ?>
                             <br>
                             <a class="btn btn-secondary" href="cancellation_requests.php">キャンセル申請を確認する</a>
                         <?php endif; ?>

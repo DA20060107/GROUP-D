@@ -29,15 +29,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $errorMessage = '処理対象のキャンセル申請を確認できませんでした。';
     } else {
         $decision = $action === 'approve' ? 'approved' : 'rejected';
-        $result = decideAfterApprovalCancellationRequest(
-            $pdo,
-            $cancellationRequestId,
-            $managerId,
-            $decision
-        );
+
+        // 申請種別を確認し、休み申請者側 / 代勤者側で処理を振り分ける
+        $typeStmt = $pdo->prepare('SELECT request_type FROM cancellation_requests WHERE id = :id');
+        $typeStmt->execute(['id' => $cancellationRequestId]);
+        $requestType = $typeStmt->fetchColumn();
+
+        if ($requestType === CANCELLATION_TYPE_SUBSTITUTE_AFTER_APPROVAL) {
+            $result = decideSubstituteAfterApprovalCancellationRequest(
+                $pdo,
+                $cancellationRequestId,
+                $managerId,
+                $decision
+            );
+            $approvedMsg = 'approved_substitute';
+        } else {
+            $result = decideAfterApprovalCancellationRequest(
+                $pdo,
+                $cancellationRequestId,
+                $managerId,
+                $decision
+            );
+            $approvedMsg = 'approved';
+        }
 
         if ($result === 'approved') {
-            header('Location: cancellation_requests.php?msg=approved#cr-' . $cancellationRequestId);
+            header('Location: cancellation_requests.php?msg=' . $approvedMsg . '#cr-' . $cancellationRequestId);
             exit;
         }
         if ($result === 'rejected') {
@@ -59,6 +76,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 if (isset($_GET['msg'])) {
     if ($_GET['msg'] === 'approved') {
         $successMessage = 'キャンセル申請を承認し、シフト担当者を元の休み申請者へ戻しました。';
+    } elseif ($_GET['msg'] === 'approved_substitute') {
+        $successMessage = 'キャンセル申請を承認しました。対象シフトと休み申請を「代勤者再調整中」にしました（シフト担当者は元の休み申請者へは戻していません）。代勤者の再調整を行ってください。';
     } elseif ($_GET['msg'] === 'rejected') {
         $successMessage = 'キャンセル申請を却下しました。現在の代勤状態は維持されます。';
     }

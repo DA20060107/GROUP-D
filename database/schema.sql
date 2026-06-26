@@ -9,6 +9,7 @@ CREATE DATABASE IF NOT EXISTS `shift_matching_system`
     DEFAULT CHARACTER SET utf8mb4
     DEFAULT COLLATE utf8mb4_unicode_ci;
 
+USE `shift_matching_system`;
 
 -- ------------------------------------------------------------
 -- employees: 従業員情報
@@ -55,8 +56,8 @@ CREATE TABLE IF NOT EXISTS shifts (
     end_time    TIME NOT NULL COMMENT '終了時刻',
     position    VARCHAR(50) NULL COMMENT '担当業務・ポジション',
     note        VARCHAR(255) NULL COMMENT '備考',
-    status      ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled')
-                NOT NULL DEFAULT 'scheduled' COMMENT 'シフト状態',
+    status      ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled', 'replacement_pending')
+                NOT NULL DEFAULT 'scheduled' COMMENT 'シフト状態（replacement_pending: 代勤者キャンセル承認後の再調整待ち）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_shifts_employee
@@ -94,9 +95,9 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     shift_id    INT NOT NULL COMMENT '休みたいシフト',
     employee_id INT NOT NULL COMMENT '申請した従業員',
     reason      VARCHAR(255) NULL COMMENT '申請理由',
-    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval')
+    status      ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval', 'replacement_pending')
                 NOT NULL DEFAULT 'pending'
-                COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了）',
+                COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了, replacement_pending: 代勤者キャンセル承認後の再調整待ち）',
     matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal'
                 COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -247,9 +248,17 @@ ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
 
 ALTER TABLE leave_requests
-    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval')
+    MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval', 'replacement_pending')
         NOT NULL DEFAULT 'pending'
-        COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了）';
+        COMMENT '申請状態（cancelled: 承認前キャンセル, cancelled_after_approval: 店長承認後のキャンセル完了, replacement_pending: 代勤者キャンセル承認後の再調整待ち）';
+
+-- ------------------------------------------------------------
+-- 代勤者による承認後キャンセル機能のための状態追加（マイグレーション）
+-- ------------------------------------------------------------
+ALTER TABLE shifts
+    MODIFY COLUMN status ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled', 'replacement_pending')
+        NOT NULL DEFAULT 'scheduled'
+        COMMENT 'シフト状態（replacement_pending: 代勤者キャンセル承認後の再調整待ち）';
 
 -- ------------------------------------------------------------
 -- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）

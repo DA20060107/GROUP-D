@@ -30,6 +30,7 @@ function leaveRequestStatusLabel(?string $status): string
         'rejected'     => '却下済み',
         'cancelled'    => 'キャンセル済み',
         'cancelled_after_approval' => '承認後キャンセル済み',
+        'replacement_pending'      => '代勤者再調整中',
     ];
     return $labels[$status] ?? (string) $status;
 }
@@ -44,6 +45,7 @@ function leaveRequestStatusBadgeClass(?string $status): string
         'rejected'     => 'badge-danger',
         'cancelled'    => 'badge-inactive',
         'cancelled_after_approval' => 'badge-inactive',
+        'replacement_pending'      => 'badge-warning',
     ];
     return $classes[$status] ?? 'badge-inactive';
 }
@@ -91,6 +93,7 @@ function shiftStatusLabel(?string $status): string
         'leave_requested' => '休み申請中',
         'substituted'     => '代勤反映済み',
         'cancelled'       => 'キャンセル',
+        'replacement_pending' => '代勤者再調整中',
     ];
     return $labels[$status] ?? (string) $status;
 }
@@ -102,6 +105,7 @@ function shiftStatusBadgeClass(?string $status): string
         'leave_requested' => 'badge-warning',
         'substituted'     => 'badge-success',
         'cancelled'       => 'badge-inactive',
+        'replacement_pending' => 'badge-warning',
     ];
     return $classes[$status] ?? 'badge-inactive';
 }
@@ -122,6 +126,10 @@ function notificationTypeLabel(?string $type): string
         'after_approval_cancel_requested' => '承認後キャンセル申請',
         'after_approval_cancel_approved'  => '承認後キャンセル承認',
         'after_approval_cancel_rejected'  => '承認後キャンセル却下',
+        'substitute_cancel_requested'     => '代勤キャンセル申請',
+        'substitute_cancel_approved'      => '代勤キャンセル承認',
+        'substitute_cancel_rejected'      => '代勤キャンセル却下',
+        'replacement_pending'             => '代勤者再調整中',
     ];
     return $labels[$type] ?? (string) $type;
 }
