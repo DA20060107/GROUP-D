@@ -7,7 +7,7 @@
 <body>
     <h1>従業員 新規登録</h1>
 
-    <form action="register_employee_action.php" method="POST">
+    <form action="employee_registar_action.php" method="POST">
         <label>名前：</label>
         <input type="text" name="name" required><br><br>
 
