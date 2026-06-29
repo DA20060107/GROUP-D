@@ -2,10 +2,17 @@
 /**
  * 承認後キャンセル申請サービス
  *
- * 現在は、休み申請者本人が「承認済みの休み申請を取り消して出勤へ戻る」
- * requester_after_approval のみを扱う。
- * 将来の代勤者側キャンセルは request_type=substitute_after_approval として
- * 同じテーブルへ追加できるよう、申請種別を分離して保存する。
+ * cancellation_requests.request_type で2種別を扱う。
+ *   requester_after_approval  : 休み申請者本人が「承認済みの休み申請を取り消して出勤へ戻る」申請。
+ *                               承認時、shifts.employee_id を元の休み申請者へ戻す。
+ *   substitute_after_approval : 承認済み代勤者本人が「やっぱり代勤できない」と申し出る申請。
+ *                               承認時、shifts.employee_id は変更せず replacement_pending にし、
+ *                               代勤候補を再抽出する（retrySubstituteMatching()）。
+ *
+ * 両者は処理が大きく異なるため、関数を分離している
+ * （createAfterApprovalCancellationRequest() / decideAfterApprovalCancellationRequest() が
+ * requester側、createSubstituteAfterApprovalCancellationRequest() /
+ * decideSubstituteAfterApprovalCancellationRequest() が substitute側）。
  */
 
 require_once __DIR__ . '/substitute_matcher.php';

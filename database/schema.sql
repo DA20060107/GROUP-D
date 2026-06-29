@@ -1,8 +1,10 @@
 -- ============================================================
 -- シフト代勤マッチング支援システム DBスキーマ
 --
--- DB名は仮で「シフト管理システム」としています。
--- 必要に応じて英数字のDB名（例: shift_management）へ変更可能です。
+-- ローカル開発用のDB名は shift_matching_system です（古い日本語名
+-- 「シフト管理システム」は使いません）。
+-- 他環境（例: さくらインターネット移行時）へ移行する場合は、移行先の
+-- DB名に合わせて、下記 CREATE DATABASE / USE 文を変更または削除してください。
 -- ============================================================
 
 CREATE DATABASE IF NOT EXISTS `shift_matching_system`
@@ -119,7 +121,7 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
     candidate_employee_id INT NOT NULL COMMENT '代勤候補の従業員',
     status               ENUM('proposed', 'accepted', 'declined', 'expired')
                          NOT NULL DEFAULT 'proposed' COMMENT '回答状況（proposed=未回答）',
-    match_score          INT NULL COMMENT '候補者の適合度スコア（現在は固定値、将来的にスキル等でスコアリング予定）',
+    match_score          INT NULL COMMENT '候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）',
     match_reason         VARCHAR(255) NULL COMMENT '候補者として抽出された理由',
     matched_at           DATETIME NULL COMMENT '候補者として抽出された日時',
     responded_at         DATETIME NULL COMMENT '回答日時',
@@ -178,13 +180,14 @@ CREATE TABLE IF NOT EXISTS approvals (
 -- ------------------------------------------------------------
 -- cancellation_requests: 承認済みの休み申請・代勤に対するキャンセル申請
 --
--- 現在は request_type=requester_after_approval のみ使用する。
--- 将来、代勤者側キャンセルを substitute_after_approval として追加できる構造にする。
+-- request_type で申請種別を区別する。
+--   requester_after_approval  : 休み申請者本人による承認後キャンセル（承認時、シフト担当者を元の休み申請者へ戻す）
+--   substitute_after_approval : 代勤者本人による承認後キャンセル（承認時、シフト担当者は戻さず replacement_pending にする）
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cancellation_requests (
     id                       INT AUTO_INCREMENT PRIMARY KEY,
     leave_request_id         INT NOT NULL COMMENT '対象の休み申請',
-    request_type             VARCHAR(50) NOT NULL COMMENT '申請種別（requester_after_approval / 将来: substitute_after_approval）',
+    request_type             VARCHAR(50) NOT NULL COMMENT '申請種別（requester_after_approval / substitute_after_approval）',
     requested_by_employee_id INT NOT NULL COMMENT 'キャンセル申請を行った従業員',
     reason                   TEXT NULL COMMENT 'キャンセル申請理由',
     status                   ENUM('pending', 'approved', 'rejected')
@@ -240,7 +243,7 @@ ALTER TABLE shifts
 -- 代勤候補抽出・通知作成機能のためのカラム追加（マイグレーション）
 -- ------------------------------------------------------------
 ALTER TABLE substitute_candidates
-    ADD COLUMN IF NOT EXISTS match_score INT NULL COMMENT '候補者の適合度スコア（現在は固定値、将来的にスキル等でスコアリング予定）' AFTER status,
+    ADD COLUMN IF NOT EXISTS match_score INT NULL COMMENT '候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）' AFTER status,
     ADD COLUMN IF NOT EXISTS match_reason VARCHAR(255) NULL COMMENT '候補者として抽出された理由' AFTER match_score,
     ADD COLUMN IF NOT EXISTS matched_at DATETIME NULL COMMENT '候補者として抽出された日時' AFTER match_reason;
 
