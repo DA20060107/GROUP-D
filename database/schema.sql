@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS users (
     role        ENUM('manager', 'employee') NOT NULL COMMENT '権限区分',
     employee_id INT NULL COMMENT '従業員ID（店長の場合はNULL）',
     name        VARCHAR(50) NOT NULL COMMENT '表示名（メニュー画面の「ログイン中：〇〇」表示用）',
+    email       VARCHAR(100) NULL COMMENT 'メールアドレス（店長情報管理用）',
+    phone       VARCHAR(50) NULL COMMENT '電話番号（店長情報管理用）',
+    note        TEXT NULL COMMENT '備考（店長情報管理用）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_users_employee
@@ -227,6 +230,11 @@ CREATE TABLE IF NOT EXISTS matching_settings (
 -- 何も行わないため、既存DBに対しては以下の ALTER TABLE で
 -- 不足しているカラムを追加する。schema.sql を再実行しても安全。
 -- ------------------------------------------------------------
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS email VARCHAR(100) NULL COMMENT 'メールアドレス（店長情報管理用）' AFTER name,
+    ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL COMMENT '電話番号（店長情報管理用）' AFTER email,
+    ADD COLUMN IF NOT EXISTS note TEXT NULL COMMENT '備考（店長情報管理用）' AFTER phone;
+
 ALTER TABLE employees
     ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当可能業務・ポジション' AFTER hire_date,
     ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position,
