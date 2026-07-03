@@ -9,7 +9,8 @@ requireRole('employee');
 $pageTitle = '従業員メニュー';
 $basePath  = '../../public/';
 $showBack  = false;
-$showHome  = true;
+// このページ自体がホーム（メニュー）なので、ホームボタンは表示しない
+$showHome  = false;
 
 require_once __DIR__ . '/../../app/includes/header.php';
 

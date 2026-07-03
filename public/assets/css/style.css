@@ -117,6 +117,72 @@ body {
     text-align: center;
 }
 
+/* ===========================================
+   トップページ（ランディング）
+   =========================================== */
+.landing {
+    text-align: center;
+    padding: 56px 16px 32px;
+}
+
+.landing-logo {
+    width: 96px;
+    height: 96px;
+    margin: 0 auto 28px;
+    border-radius: 24px;
+    background: linear-gradient(135deg, #1565c0 0%, #42a5f5 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 28px rgba(21, 101, 192, 0.28);
+}
+
+.landing-logo svg {
+    width: 52px;
+    height: 52px;
+}
+
+.landing-title {
+    font-size: 2.1em;
+    line-height: 1.3;
+    color: #0d47a1;
+    margin: 0 0 18px;
+    letter-spacing: 0.02em;
+}
+
+.landing-tagline {
+    color: #555555;
+    font-size: 1.1em;
+    max-width: 540px;
+    margin: 0 auto 36px;
+}
+
+.btn-landing {
+    font-size: 1.1em;
+    padding: 14px 44px;
+    border-radius: 999px;
+    box-shadow: 0 8px 20px rgba(21, 101, 192, 0.3);
+}
+
+.btn-landing:hover {
+    box-shadow: 0 10px 24px rgba(13, 71, 161, 0.35);
+}
+
+.landing-note {
+    margin-top: 24px;
+    color: #8a8a8a;
+    font-size: 0.9em;
+}
+
+@media (max-width: 600px) {
+    .landing {
+        padding: 36px 12px 24px;
+    }
+    .landing-title {
+        font-size: 1.6em;
+    }
+}
+
 /* メニュー画面用：大きいリンクボタンの一覧 */
 .menu-list {
     list-style: none;

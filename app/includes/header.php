@@ -9,6 +9,9 @@
  *   $showHome  : ホームボタンを表示するか（省略時 true）
  */
 
+// ログイン状態を判定できるようにする（ホームボタンのリンク先決定に使用）
+require_once __DIR__ . '/auth.php';
+
 if (!isset($basePath)) {
     $basePath = '';
 }
@@ -20,6 +23,19 @@ if (!isset($showBack)) {
 }
 if (!isset($showHome)) {
     $showHome = true;
+}
+
+// ホームボタンのリンク先を決める。
+// ログイン中は自分のロール用メニュー（menu.php）へ、
+// 未ログイン時のみトップページ（index.php）へ遷移させる。
+// これにより、ログイン後はログアウトしない限りトップページへは戻れない。
+$headerUser = currentUser();
+if ($headerUser !== null && ($headerUser['role'] ?? '') === 'manager') {
+    $homeUrl = $basePath . '../pages/manager/menu.php';
+} elseif ($headerUser !== null && ($headerUser['role'] ?? '') === 'employee') {
+    $homeUrl = $basePath . '../pages/employee/menu.php';
+} else {
+    $homeUrl = $basePath . 'index.php';
 }
 ?>
 <!DOCTYPE html>
@@ -40,7 +56,7 @@ if (!isset($showHome)) {
     <div class="header-title"><?php echo htmlspecialchars($pageTitle); ?></div>
     <div class="header-right">
         <?php if ($showHome): ?>
-        <a class="btn-header" href="<?php echo $basePath; ?>index.php">ホーム</a>
+        <a class="btn-header" href="<?php echo htmlspecialchars($homeUrl); ?>">ホーム</a>
         <?php endif; ?>
     </div>
 </header>

@@ -13,25 +13,29 @@ $showHome  = false;
 require_once __DIR__ . '/../app/includes/header.php';
 ?>
 
-<p class="page-description">
-    シフト代勤マッチング支援システムへようこそ。<br>
-    休みたい従業員と代わりに働ける従業員のマッチングを支援し、連絡負担とシフト調整負担を軽減します。
-</p>
+<section class="landing">
+    <div class="landing-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" role="img">
+            <polyline points="17 1 21 5 17 9"></polyline>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <polyline points="7 23 3 19 7 15"></polyline>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
+        </svg>
+    </div>
 
-<div class="section">
-    <h2>はじめに</h2>
-    <a class="btn" href="login.php">ログイン画面へ</a>
-</div>
+    <h1 class="landing-title">シフト代勤マッチング<wbr>支援システム</h1>
 
-<div class="section">
-    <h2>画面確認用リンク（開発用）</h2>
-    <p class="page-description">
-        各メニュー画面への直接リンクです。未ログインの場合はログイン画面へ転送されます。
+    <p class="landing-tagline">
+        休みたい人と、代われる人を、かんたんマッチング。<br>
+        従業員同士の連絡負担と、店長のシフト調整負担を軽減します。
     </p>
-    <ul class="menu-list">
-        <li><a href="../pages/manager/menu.php">店長メニューを見る</a></li>
-        <li><a href="../pages/employee/menu.php">従業員メニューを見る</a></li>
-    </ul>
-</div>
+
+    <a class="btn btn-landing" href="login.php">ログインしてはじめる</a>
+
+    <p class="landing-note">
+        アカウントをお持ちでない方は、ログイン画面から新規作成できます。
+    </p>
+</section>
 
 <?php require_once __DIR__ . '/../app/includes/footer.php'; ?>
