@@ -23,7 +23,16 @@ $successMessage = '';
 $editEmployee = null;
 
 // 新規登録フォームの再表示用データ
-$newEmployeeForm = ['name' => '', 'username' => '', 'position' => '', 'note' => '', 'hire_date' => '', 'skill_level' => '3'];
+$newEmployeeForm = [
+    'name'        => '',
+    'username'    => '',
+    'email'       => '',
+    'phone'       => '',
+    'position'    => '',
+    'note'        => '',
+    'hire_date'   => '',
+    'skill_level' => '3',
+];
 
 // ------------------------------------------------------------
 // POST処理
@@ -35,6 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $name        = trim($_POST['name'] ?? '');
         $username    = trim($_POST['username'] ?? '');
         $password    = (string) ($_POST['password'] ?? '');
+        $email       = trim($_POST['email'] ?? '');
+        $phone       = trim($_POST['phone'] ?? '');
         $position    = trim($_POST['position'] ?? '');
         $note        = trim($_POST['note'] ?? '');
         $hireDate    = trim($_POST['hire_date'] ?? '');
@@ -44,6 +55,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $newEmployeeForm = [
             'name'        => $name,
             'username'    => $username,
+            'email'       => $email,
+            'phone'       => $phone,
             'position'    => $position,
             'note'        => $note,
             'hire_date'   => $hireDate,
@@ -65,11 +78,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->beginTransaction();
 
                     $stmt = $pdo->prepare(
-                        'INSERT INTO employees (name, position, note, hire_date, skill_level)
-                         VALUES (:name, :position, :note, :hire_date, :skill_level)'
+                        'INSERT INTO employees (name, email, phone, position, note, hire_date, skill_level)
+                         VALUES (:name, :email, :phone, :position, :note, :hire_date, :skill_level)'
                     );
                     $stmt->execute([
                         'name'        => $name,
+                        'email'       => $email !== '' ? $email : null,
+                        'phone'       => $phone !== '' ? $phone : null,
                         'position'    => $position !== '' ? $position : null,
                         'note'        => $note !== '' ? $note : null,
                         'hire_date'   => $hireDate !== '' ? $hireDate : null,
@@ -425,6 +440,14 @@ function ef($editEmployee, $key)
         <div class="form-group">
             <label for="new_password">初期パスワード</label>
             <input type="text" id="new_password" name="password" placeholder="例: password123">
+        </div>
+        <div class="form-group">
+            <label for="new_email">メールアドレス</label>
+            <input type="email" id="new_email" name="email" placeholder="例: yamada@example.com" value="<?php echo htmlspecialchars($newEmployeeForm['email']); ?>">
+        </div>
+        <div class="form-group">
+            <label for="new_phone">電話番号</label>
+            <input type="text" id="new_phone" name="phone" placeholder="例: 090-1234-5678" value="<?php echo htmlspecialchars($newEmployeeForm['phone']); ?>">
         </div>
         <div class="form-group">
             <label for="new_position">担当可能業務・ポジション</label>
