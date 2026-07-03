@@ -277,25 +277,36 @@ if ($editEmployee === null && isset($_GET['edit'])) {
     }
 }
 
+// 編集URL、または編集POSTの入力エラー時は、編集フォームだけを表示する
+$isEditMode = isset($_GET['edit'])
+    || $editEmployee !== null
+    || ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'update_employee');
+
 // ------------------------------------------------------------
 // 従業員一覧（ログインIDを併せて表示）
 // ------------------------------------------------------------
-$employees = $pdo->query(
-    'SELECT e.*, u.username
-     FROM employees e
-     LEFT JOIN users u ON u.employee_id = e.id AND u.role = "employee"
-     ORDER BY e.id'
-)->fetchAll();
+$employees = [];
+if (!$isEditMode) {
+    $employees = $pdo->query(
+        'SELECT e.*, u.username
+         FROM employees e
+         LEFT JOIN users u ON u.employee_id = e.id AND u.role = "employee"
+         ORDER BY e.id'
+    )->fetchAll();
+}
 
 // ------------------------------------------------------------
 // 従業員ごとの勤務可能日確認（絞り込み対応）
 // ------------------------------------------------------------
 $availabilityEmployeeId = null;
-if (isset($_GET['availability_employee_id']) && $_GET['availability_employee_id'] !== '') {
+if (!$isEditMode && isset($_GET['availability_employee_id']) && $_GET['availability_employee_id'] !== '') {
     $availabilityEmployeeId = (int) $_GET['availability_employee_id'];
 }
 
-if ($availabilityEmployeeId !== null) {
+$availabilityList = [];
+if ($isEditMode) {
+    $availabilityList = [];
+} elseif ($availabilityEmployeeId !== null) {
     $stmt = $pdo->prepare(
         'SELECT a.*, e.name AS employee_name
          FROM availability a
@@ -312,7 +323,9 @@ if ($availabilityEmployeeId !== null) {
          ORDER BY a.available_date, a.start_time'
     );
 }
-$availabilityList = $stmt->fetchAll();
+if (!$isEditMode) {
+    $availabilityList = $stmt->fetchAll();
+}
 
 require_once __DIR__ . '/../../app/includes/header.php';
 
@@ -326,7 +339,11 @@ function ef($editEmployee, $key)
 ?>
 
 <p class="page-description">
+    <?php if ($isEditMode): ?>
+    従業員の基本情報とログインアカウントを編集します。
+    <?php else: ?>
     従業員の基本情報・ログインアカウントの管理と、従業員ごとの勤務可能日の確認を行います。
+    <?php endif; ?>
 </p>
 
 <div class="error-message"><?php echo htmlspecialchars($errorMessage); ?></div>
@@ -389,6 +406,7 @@ function ef($editEmployee, $key)
 </div>
 <?php endif; ?>
 
+<?php if (!$isEditMode): ?>
 <div class="section">
     <h2>従業員の新規登録</h2>
     <p class="page-description">
@@ -538,5 +556,6 @@ function ef($editEmployee, $key)
         </tbody>
     </table>
 </div>
+<?php endif; ?>
 
 <?php require_once __DIR__ . '/../../app/includes/footer.php'; ?>

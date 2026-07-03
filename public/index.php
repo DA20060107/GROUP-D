@@ -9,6 +9,7 @@ $pageTitle = 'トップページ';
 $basePath  = '';
 $showBack  = false;
 $showHome  = false;
+$mainClass = 'container container-landing';
 
 require_once __DIR__ . '/../app/includes/header.php';
 ?>

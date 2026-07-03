@@ -23,6 +23,7 @@ if ($loggedInUser !== null) {
 
 $errorMessage = '';
 $username     = '';
+$showTimeoutDialog = isset($_GET['timeout']) || wasSessionTimeoutDetected();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
@@ -43,6 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'employee_id' => $user['employee_id'],
                 'name'        => $user['name'],
             ];
+            $_SESSION['last_activity'] = time();
 
             if ($user['role'] === 'manager') {
                 header('Location: ../pages/manager/menu.php');
@@ -60,6 +62,7 @@ $pageTitle = 'ログイン';
 $basePath  = '';
 $showBack  = false;
 $showHome  = true;
+$homeLabel = 'トップ';
 
 require_once __DIR__ . '/../app/includes/header.php';
 ?>
@@ -67,6 +70,44 @@ require_once __DIR__ . '/../app/includes/header.php';
 <p class="page-description">
     ユーザーIDとパスワードを入力してログインしてください。
 </p>
+
+<?php if ($showTimeoutDialog): ?>
+<div class="timeout-dialog" id="timeoutDialog" role="alert">
+    <span>無操作のためログアウトしました。</span>
+    <button type="button" class="timeout-dialog-close" aria-label="閉じる" onclick="document.getElementById('timeoutDialog').remove();">×</button>
+</div>
+<script>
+// タイムアウト通知は一度だけ表示し、ページ移動時や戻る操作で残らないようにする
+(function () {
+    const dialog = document.getElementById('timeoutDialog');
+    if (!dialog) {
+        return;
+    }
+
+    const removeDialog = function () {
+        const currentDialog = document.getElementById('timeoutDialog');
+        if (currentDialog) {
+            currentDialog.remove();
+        }
+    };
+
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('timeout')) {
+        url.searchParams.delete('timeout');
+        window.history.replaceState(null, document.title, url.pathname + url.search + url.hash);
+    }
+
+    window.addEventListener('pagehide', removeDialog);
+    document.addEventListener('submit', removeDialog);
+    document.addEventListener('click', function (event) {
+        const link = event.target.closest('a');
+        if (link && link.href) {
+            removeDialog();
+        }
+    });
+}());
+</script>
+<?php endif; ?>
 
 <div class="error-message"><?php echo htmlspecialchars($errorMessage); ?></div>
 <form class="section" action="login.php" method="post">

@@ -7,6 +7,8 @@
  *   $basePath  : public フォルダまでの相対パス（例: '' or '../../public/'）
  *   $showBack  : 戻るボタンを表示するか（省略時 true）
  *   $showHome  : ホームボタンを表示するか（省略時 true）
+ *   $homeLabel : ホームボタンの表示名（省略時 ホーム）
+ *   $mainClass : mainタグへ付与するCSSクラス（省略時 container）
  */
 
 // ログイン状態を判定できるようにする（ホームボタンのリンク先決定に使用）
@@ -23,6 +25,12 @@ if (!isset($showBack)) {
 }
 if (!isset($showHome)) {
     $showHome = true;
+}
+if (!isset($homeLabel)) {
+    $homeLabel = 'ホーム';
+}
+if (!isset($mainClass)) {
+    $mainClass = 'container';
 }
 
 // ホームボタンのリンク先を決める。
@@ -44,7 +52,7 @@ if ($headerUser !== null && ($headerUser['role'] ?? '') === 'manager') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?php echo htmlspecialchars($pageTitle); ?> | シフト代勤マッチング支援システム</title>
-<link rel="stylesheet" href="<?php echo $basePath; ?>assets/css/style.css">
+<link rel="stylesheet" href="<?php echo $basePath; ?>assets/css/style.css?v=<?php echo filemtime(__DIR__ . '/../../public/assets/css/style.css'); ?>">
 </head>
 <body>
 <header class="site-header">
@@ -56,8 +64,8 @@ if ($headerUser !== null && ($headerUser['role'] ?? '') === 'manager') {
     <div class="header-title"><?php echo htmlspecialchars($pageTitle); ?></div>
     <div class="header-right">
         <?php if ($showHome): ?>
-        <a class="btn-header" href="<?php echo htmlspecialchars($homeUrl); ?>">ホーム</a>
+        <a class="btn-header" href="<?php echo htmlspecialchars($homeUrl); ?>"><?php echo htmlspecialchars($homeLabel); ?></a>
         <?php endif; ?>
     </div>
 </header>
-<main class="container">
+<main class="<?php echo htmlspecialchars($mainClass); ?>">
