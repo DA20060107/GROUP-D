@@ -33,10 +33,6 @@ require_once __DIR__ . '/../app/includes/header.php';
     </p>
 
     <a class="btn btn-landing" href="login.php">ログインしてはじめる</a>
-
-    <p class="landing-note">
-        アカウントをお持ちでない方は、ログイン画面から新規作成できます。
-    </p>
 </section>
 
 <?php require_once __DIR__ . '/../app/includes/footer.php'; ?>
