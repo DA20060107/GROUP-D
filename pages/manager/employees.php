@@ -2,10 +2,21 @@
 /**
  * 従業員情報管理画面（店長用）
  *
- * - 従業員一覧の表示・新規登録（ログインアカウント同時作成）・編集・有効/無効切替
+ * - 従業員一覧の表示・新規登録（ログインアカウント同時作成）・編集・削除
  * - 従業員ごとの勤務可能日確認（店長は登録しない。確認のみ）
  *
- * TODO: 休み申請・代勤候補抽出・通知作成・店長承認は今後実装する予定
+ * 削除時の注意：
+ *   employees の削除に伴い、外部キー制約（ON DELETE CASCADE）により
+ *   当該従業員の shifts / availability / leave_requests（申請者として） /
+ *   substitute_candidates（代勤候補として） / cancellation_requests（申請者として）
+ *   も連動して削除される。ログインアカウント（users）は ON DELETE SET NULL のため、
+ *   宙に浮いたアカウントが残らないよう、本画面側で明示的に削除している。
+ *
+ *   休み申請・代勤候補・代勤承認・キャンセル申請など、他の従業員と関連するデータが
+ *   1件でも残っている場合は、削除すると他の従業員の履歴まで巻き添えで消えてしまうため、
+ *   getEmployeeDeletionBlockers() の判定により削除をブロックする（一覧画面ではボタンが
+ *   「削除不可」表示に変わり、押すと理由を説明する警告ダイアログが出る。サーバー側でも
+ *   同じ判定を行い、直接POSTされた場合でもブロックする）。
  */
 
 require_once __DIR__ . '/../../app/includes/auth.php';
@@ -15,6 +26,65 @@ require_once __DIR__ . '/../../app/includes/status_labels.php';
 
 $pageTitle = '従業員情報管理';
 $basePath  = '../../public/';
+
+/**
+ * 従業員削除をブロックすべき理由の一覧を返す（空配列なら削除可能）
+ *
+ * employees の削除は外部キー制約（ON DELETE CASCADE）により、
+ * shifts / availability / leave_requests / substitute_candidates /
+ * cancellation_requests を連動して削除してしまう。
+ * これらのテーブルに、他の従業員と関連するデータ（休み申請・代勤候補・
+ * 代勤承認・キャンセル申請・代勤中のシフトなど）が残っている場合は、
+ * 削除すると他の従業員の履歴まで巻き添えで消えてしまうため、削除をブロックする。
+ *
+ * @return string[] ブロック理由の一覧（日本語の説明文）
+ */
+function getEmployeeDeletionBlockers(PDO $pdo, int $employeeId): array
+{
+    $reasons = [];
+
+    // 本人が提出した休み申請（どの状態でも、関連する代勤候補・承認・キャンセル申請が
+    // 連鎖削除され、他の従業員の履歴に影響するためブロックする）
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM leave_requests WHERE employee_id = :id');
+    $stmt->execute(['id' => $employeeId]);
+    $count = (int) $stmt->fetchColumn();
+    if ($count > 0) {
+        $reasons[] = "本人が提出した休み申請の履歴が{$count}件あります（関連する代勤候補・承認記録も削除されます）";
+    }
+
+    // 他の従業員の休み申請に対する代勤候補・代勤対応の記録（未回答・回答済み・無効化済みを問わず）
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM substitute_candidates WHERE candidate_employee_id = :id');
+    $stmt->execute(['id' => $employeeId]);
+    $count = (int) $stmt->fetchColumn();
+    if ($count > 0) {
+        $reasons[] = "他の従業員の休み申請に対する代勤候補・代勤対応の記録が{$count}件あります";
+    }
+
+    // 承認後キャンセル申請（休み申請者側・代勤者側どちらも requested_by_employee_id で判定）
+    $stmt = $pdo->prepare('SELECT COUNT(*) FROM cancellation_requests WHERE requested_by_employee_id = :id');
+    $stmt->execute(['id' => $employeeId]);
+    $count = (int) $stmt->fetchColumn();
+    if ($count > 0) {
+        $reasons[] = "代勤・休み申請のキャンセル申請履歴が{$count}件あります";
+    }
+
+    // 現在、他の従業員の休み申請の代わりに勤務しているシフト（代勤中・代勤者再調整中）
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*)
+         FROM shifts s
+         JOIN leave_requests lr ON lr.shift_id = s.id
+         WHERE s.employee_id = :id
+           AND lr.employee_id <> :id2
+           AND lr.status IN ("approved", "replacement_pending")'
+    );
+    $stmt->execute(['id' => $employeeId, 'id2' => $employeeId]);
+    $count = (int) $stmt->fetchColumn();
+    if ($count > 0) {
+        $reasons[] = "現在、他の従業員の代わりに勤務している代勤シフトが{$count}件あります";
+    }
+
+    return $reasons;
+}
 
 $errorMessage   = '';
 $successMessage = '';
@@ -227,20 +297,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         }
-    } elseif ($action === 'toggle_active') {
+    } elseif ($action === 'delete_employee') {
         $id = (int) ($_POST['employee_id'] ?? 0);
 
-        $stmt = $pdo->prepare('SELECT id FROM employees WHERE id = :id');
+        $stmt = $pdo->prepare('SELECT id, name FROM employees WHERE id = :id');
         $stmt->execute(['id' => $id]);
+        $target = $stmt->fetch();
 
-        if ($stmt->fetch() === false) {
+        if ($target === false) {
             $errorMessage = '指定された従業員が見つかりません。';
         } else {
-            $pdo->prepare('UPDATE employees SET is_active = 1 - is_active WHERE id = :id')
-                ->execute(['id' => $id]);
+            // サーバー側でも必ず判定する（画面側のJS警告はあくまで補助であり、
+            // ここでブロックしないと直接POSTされた場合に削除が通ってしまうため）。
+            $blockers = getEmployeeDeletionBlockers($pdo, $id);
 
-            header('Location: employees.php?msg=toggled');
-            exit;
+            if (!empty($blockers)) {
+                $errorMessage = $target['name'] . 'さんは削除できません。他の従業員と関連するデータがあるため、削除すると影響が及びます：'
+                    . implode(' / ', $blockers);
+            } else {
+                try {
+                    $pdo->beginTransaction();
+
+                    // ログインアカウントを先に削除する（employees側のON DELETE SET NULLだけでは
+                    // ログインIDが宙に浮いた users レコードが残ってしまうため）。
+                    $pdo->prepare("DELETE FROM users WHERE employee_id = :id AND role = 'employee'")
+                        ->execute(['id' => $id]);
+
+                    // 従業員本体を削除する。この時点で関連データがないことは確認済みのため、
+                    // 削除されるのは本人自身の availability など、他者に影響しないデータのみ。
+                    $pdo->prepare('DELETE FROM employees WHERE id = :id')
+                        ->execute(['id' => $id]);
+
+                    $pdo->commit();
+
+                    header('Location: employees.php?msg=deleted');
+                    exit;
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    $errorMessage = '削除に失敗しました。エラー詳細: ' . $e->getMessage();
+                }
+            }
         }
     }
 }
@@ -265,8 +361,8 @@ if (isset($_GET['msg'])) {
         case 'updated_login_pw':
             $successMessage = '従業員情報を更新し、ログインIDとパスワードを変更しました。';
             break;
-        case 'toggled':
-            $successMessage = '従業員の有効/無効状態を変更しました。';
+        case 'deleted':
+            $successMessage = '従業員を削除しました。';
             break;
     }
 }
@@ -488,8 +584,7 @@ function ef($editEmployee, $key)
                 <th>入社日</th>
                 <th>ポジション</th>
                 <th>スキルレベル</th>
-                <th>備考</th>
-                <th>状態</th>
+                <th style="width: 26%;">備考</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -506,24 +601,25 @@ function ef($editEmployee, $key)
                 <td><?php echo htmlspecialchars(skillLevelLabel($emp['skill_level'] ?? null)); ?></td>
                 <td><?php echo htmlspecialchars($emp['note'] ?? ''); ?></td>
                 <td>
-                    <?php if ((int) $emp['is_active'] === 1): ?>
-                        <span class="badge badge-active">有効</span>
-                    <?php else: ?>
-                        <span class="badge badge-inactive">無効</span>
-                    <?php endif; ?>
-                </td>
-                <td>
                     <div class="table-actions">
                         <a class="btn btn-secondary" href="employees.php?edit=<?php echo (int) $emp['id']; ?>">編集</a>
-                        <form method="post" action="employees.php">
-                            <input type="hidden" name="action" value="toggle_active">
+                        <?php $deleteBlockers = getEmployeeDeletionBlockers($pdo, (int) $emp['id']); ?>
+                        <?php if (empty($deleteBlockers)): ?>
+                        <form method="post" action="employees.php"
+                              onsubmit="return confirm('<?php echo htmlspecialchars($emp['name'], ENT_QUOTES); ?>さんを削除しますか？この操作は取り消せません。');">
+                            <input type="hidden" name="action" value="delete_employee">
                             <input type="hidden" name="employee_id" value="<?php echo (int) $emp['id']; ?>">
-                            <?php if ((int) $emp['is_active'] === 1): ?>
-                                <button type="submit" class="btn btn-secondary">無効化</button>
-                            <?php else: ?>
-                                <button type="submit" class="btn btn-secondary">有効化</button>
-                            <?php endif; ?>
+                            <button type="submit" class="btn btn-secondary">削除</button>
                         </form>
+                        <?php else: ?>
+                        <?php
+                            $blockMessage = $emp['name'] . 'さんは削除できません。\n\n【理由】\n・'
+                                . implode('\n・', $deleteBlockers)
+                                . '\n\n他の従業員の記録に影響するため、削除をブロックしています。';
+                        ?>
+                        <button type="button" class="btn btn-secondary"
+                                onclick="alert('<?php echo htmlspecialchars($blockMessage, ENT_QUOTES); ?>');">削除不可</button>
+                        <?php endif; ?>
                     </div>
                 </td>
             </tr>
