@@ -101,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif ($action === 'update_employee') {
         $id         = (int) ($_POST['employee_id'] ?? 0);
         $name       = trim($_POST['name'] ?? '');
+        $username   = trim($_POST['username'] ?? '');
         $email      = trim($_POST['email'] ?? '');
         $phone      = trim($_POST['phone'] ?? '');
         $hireDate   = trim($_POST['hire_date'] ?? '');
@@ -108,7 +109,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $note       = trim($_POST['note'] ?? '');
         $skillLevel = trim($_POST['skill_level'] ?? '3');
 
-        $stmt = $pdo->prepare('SELECT * FROM employees WHERE id = :id');
+        $stmt = $pdo->prepare(
+            'SELECT e.*, u.id AS user_id, u.username
+             FROM employees e
+             LEFT JOIN users u ON u.employee_id = e.id AND u.role = "employee"
+             WHERE e.id = :id'
+        );
         $stmt->execute(['id' => $id]);
         $target = $stmt->fetch();
 
@@ -117,33 +123,94 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($name === '') {
             $errorMessage = '氏名は必須です。';
             $editEmployee = $_POST;
+        } elseif ($username === '') {
+            $errorMessage = 'ログインIDは必須です。';
+            $editEmployee = $_POST;
         } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
             $errorMessage = 'スキルレベルは1〜5の範囲で指定してください。';
             $editEmployee = $_POST;
+        } elseif ($target['user_id'] === null) {
+            $errorMessage = '対象従業員のログインアカウントが見つかりません。';
+            $editEmployee = $_POST;
         } else {
+            // パスワードは任意。空欄の場合は現在のパスワードを維持する（トリムしない）
+            $newPassword = (string) ($_POST['password'] ?? '');
+            $isUsernameChanged = $username !== (string) $target['username'];
+
+            // users.username は全ユーザーで一意。本人以外が使っているログインIDは指定できない。
             $stmt = $pdo->prepare(
-                'UPDATE employees
-                 SET name = :name, email = :email, phone = :phone, hire_date = :hire_date,
-                     position = :position, note = :note, skill_level = :skill_level
-                 WHERE id = :id'
+                'SELECT id
+                 FROM users
+                 WHERE username = :username
+                   AND id <> :current_user_id
+                 LIMIT 1'
             );
             $stmt->execute([
-                'name'        => $name,
-                'email'       => $email !== '' ? $email : null,
-                'phone'       => $phone !== '' ? $phone : null,
-                'hire_date'   => $hireDate !== '' ? $hireDate : null,
-                'position'    => $position !== '' ? $position : null,
-                'note'        => $note !== '' ? $note : null,
-                'skill_level' => (int) $skillLevel,
-                'id'          => $id,
+                'username'        => $username,
+                'current_user_id' => (int) $target['user_id'],
             ]);
 
-            // ログイン中ユーザー名の表示にも反映させるため users.name も更新する
-            $stmt = $pdo->prepare("UPDATE users SET name = :name WHERE employee_id = :id AND role = 'employee'");
-            $stmt->execute(['name' => $name, 'id' => $id]);
+            if ($stmt->fetch() !== false) {
+                $errorMessage = 'このログインIDは既に使用されています。別のログインIDを指定してください。';
+                $editEmployee = $_POST;
+            } else {
+                try {
+                    $pdo->beginTransaction();
 
-            header('Location: employees.php?msg=updated');
-            exit;
+                    $stmt = $pdo->prepare(
+                        'UPDATE employees
+                         SET name = :name, email = :email, phone = :phone, hire_date = :hire_date,
+                             position = :position, note = :note, skill_level = :skill_level
+                         WHERE id = :id'
+                    );
+                    $stmt->execute([
+                        'name'        => $name,
+                        'email'       => $email !== '' ? $email : null,
+                        'phone'       => $phone !== '' ? $phone : null,
+                        'hire_date'   => $hireDate !== '' ? $hireDate : null,
+                        'position'    => $position !== '' ? $position : null,
+                        'note'        => $note !== '' ? $note : null,
+                        'skill_level' => (int) $skillLevel,
+                        'id'          => $id,
+                    ]);
+
+                    // ログイン中ユーザー名の表示とログインIDにも反映させるため users も更新する
+                    $userSql = 'UPDATE users SET name = :name, username = :username';
+                    $userParams = [
+                        'name'     => $name,
+                        'username' => $username,
+                        'id'       => $id,
+                    ];
+
+                    // パスワードが入力された場合のみ、ハッシュ化して更新する
+                    if ($newPassword !== '') {
+                        $userSql .= ', password = :password';
+                        $userParams['password'] = password_hash($newPassword, PASSWORD_DEFAULT);
+                    }
+
+                    $userSql .= ' WHERE employee_id = :id AND role = "employee"';
+                    $pdo->prepare($userSql)->execute($userParams);
+
+                    $pdo->commit();
+
+                    if ($isUsernameChanged && $newPassword !== '') {
+                        $messageKey = 'updated_login_pw';
+                    } elseif ($isUsernameChanged) {
+                        $messageKey = 'updated_login';
+                    } elseif ($newPassword !== '') {
+                        $messageKey = 'updated_pw';
+                    } else {
+                        $messageKey = 'updated';
+                    }
+
+                    header('Location: employees.php?msg=' . $messageKey);
+                    exit;
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    $errorMessage = '更新に失敗しました。エラー詳細: ' . $e->getMessage();
+                    $editEmployee = $_POST;
+                }
+            }
         }
     } elseif ($action === 'toggle_active') {
         $id = (int) ($_POST['employee_id'] ?? 0);
@@ -174,6 +241,15 @@ if (isset($_GET['msg'])) {
         case 'updated':
             $successMessage = '従業員情報を更新しました。';
             break;
+        case 'updated_pw':
+            $successMessage = '従業員情報を更新し、パスワードを変更しました。';
+            break;
+        case 'updated_login':
+            $successMessage = '従業員情報を更新し、ログインIDを変更しました。';
+            break;
+        case 'updated_login_pw':
+            $successMessage = '従業員情報を更新し、ログインIDとパスワードを変更しました。';
+            break;
         case 'toggled':
             $successMessage = '従業員の有効/無効状態を変更しました。';
             break;
@@ -185,7 +261,12 @@ if (isset($_GET['msg'])) {
 // ------------------------------------------------------------
 if ($editEmployee === null && isset($_GET['edit'])) {
     $editId = (int) $_GET['edit'];
-    $stmt = $pdo->prepare('SELECT * FROM employees WHERE id = :id');
+    $stmt = $pdo->prepare(
+        'SELECT e.*, u.username
+         FROM employees e
+         LEFT JOIN users u ON u.employee_id = e.id AND u.role = "employee"
+         WHERE e.id = :id'
+    );
     $stmt->execute(['id' => $editId]);
     $row = $stmt->fetch();
 
@@ -262,6 +343,10 @@ function ef($editEmployee, $key)
             <input type="text" id="edit_name" name="name" value="<?php echo ef($editEmployee, 'name'); ?>">
         </div>
         <div class="form-group">
+            <label for="edit_username">ログインID</label>
+            <input type="text" id="edit_username" name="username" value="<?php echo ef($editEmployee, 'username'); ?>" placeholder="例: employee06">
+        </div>
+        <div class="form-group">
             <label for="edit_email">メールアドレス</label>
             <input type="email" id="edit_email" name="email" value="<?php echo ef($editEmployee, 'email'); ?>">
         </div>
@@ -290,6 +375,13 @@ function ef($editEmployee, $key)
         <div class="form-group">
             <label for="edit_note">備考</label>
             <textarea id="edit_note" name="note" rows="3"><?php echo ef($editEmployee, 'note'); ?></textarea>
+        </div>
+        <div class="form-group">
+            <label for="edit_password">新しいパスワード</label>
+            <input type="text" id="edit_password" name="password" value="" autocomplete="new-password" placeholder="変更する場合のみ入力">
+            <p class="page-description" style="margin: 6px 0 0; font-size: 0.9em;">
+                空欄のまま更新すると、パスワードは変更されません。入力した場合はハッシュ化して保存されます。
+            </p>
         </div>
         <button type="submit" class="btn">更新する</button>
         <a class="btn btn-secondary" href="employees.php">キャンセル</a>
