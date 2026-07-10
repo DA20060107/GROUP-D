@@ -106,7 +106,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             'replacement_pending',
                         ], true)): ?>
                             <br>
-                            <a class="btn btn-secondary" href="result.php">承認結果を確認する</a>
+                            <a class="btn btn-secondary" href="result.php?from=notifications">承認結果を確認する</a>
                         <?php elseif (in_array($n['type'], [
                             'substitute_cancel_approved',
                             'substitute_cancel_rejected',

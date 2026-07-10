@@ -84,24 +84,24 @@ require_once __DIR__ . '/../../app/includes/header.php';
                         <?php elseif ($n['type'] === 'candidate_available'): ?>
                             <br>
                             <?php if ($n['related_leave_request_id'] !== null): ?>
-                                <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>
+                                <a class="btn btn-secondary" href="approvals.php?from=notifications#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認する</a>
                             <?php else: ?>
-                                <a class="btn btn-secondary" href="approvals.php">承認画面で確認する</a>
+                                <a class="btn btn-secondary" href="approvals.php?from=notifications">承認画面で確認する</a>
                             <?php endif; ?>
                         <?php elseif (in_array($n['type'], ['no_candidate', 'rematch_no_candidate'], true)): ?>
                             <br>
                             <?php echo renderStatusBadge('手動対応が必要', 'badge-warning'); ?>
                             <?php if ($n['related_leave_request_id'] !== null): ?>
-                                <a class="btn btn-secondary" href="approvals.php#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認・再抽出する</a>
+                                <a class="btn btn-secondary" href="approvals.php?from=notifications#lr-<?php echo (int) $n['related_leave_request_id']; ?>">承認画面で確認・再抽出する</a>
                             <?php else: ?>
-                                <a class="btn btn-secondary" href="approvals.php">承認画面で確認・再抽出する</a>
+                                <a class="btn btn-secondary" href="approvals.php?from=notifications">承認画面で確認・再抽出する</a>
                             <?php endif; ?>
                         <?php elseif (in_array($n['type'], [
                             'after_approval_cancel_requested',
                             'substitute_cancel_requested',
                         ], true)): ?>
                             <br>
-                            <a class="btn btn-secondary" href="cancellation_requests.php">キャンセル申請を確認する</a>
+                            <a class="btn btn-secondary" href="cancellation_requests.php?from=notifications">キャンセル申請を確認する</a>
                         <?php endif; ?>
                     </td>
                     <td>
@@ -128,7 +128,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
 </div>
 
 <div class="section">
-    <a class="btn" href="approvals.php">承認画面へ</a>
+    <a class="btn" href="approvals.php?from=notifications">承認画面へ</a>
 </div>
 
 <?php require_once __DIR__ . '/../../app/includes/footer.php'; ?>

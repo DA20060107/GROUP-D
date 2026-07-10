@@ -119,6 +119,11 @@ $processedRequests = $pdo->query(
         ORDER BY cr.decided_at DESC, cr.id DESC"
 )->fetchAll();
 
+// 通知確認画面から来た場合は「戻る」先を通知確認画面にする（それ以外はメニュー）
+if (($_GET['from'] ?? '') === 'notifications') {
+    $backUrl = 'notifications.php';
+}
+
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 

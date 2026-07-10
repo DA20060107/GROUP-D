@@ -438,6 +438,11 @@ if (!$isEditMode) {
     $availabilityList = $stmt->fetchAll();
 }
 
+// 編集フォーム表示中の「戻る」先は、一つ前の画面である従業員一覧（このページの一覧表示）にする
+if ($isEditMode) {
+    $backUrl = 'employees.php';
+}
+
 require_once __DIR__ . '/../../app/includes/header.php';
 
 /**

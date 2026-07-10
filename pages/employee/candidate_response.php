@@ -126,6 +126,9 @@ if ($candidateId > 0) {
     $candidate = $stmt->fetch();
 }
 
+// この画面は通知確認画面から遷移してくるため、「戻る」先は通知確認画面にする
+$backUrl = 'notifications.php';
+
 require_once __DIR__ . '/../../app/includes/header.php';
 ?>
 
