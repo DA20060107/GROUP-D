@@ -9,6 +9,8 @@
  *   $showHome  : ホームボタンを表示するか（省略時 true）
  *   $homeLabel : ホームボタンの表示名（省略時 ホーム）
  *   $mainClass : mainタグへ付与するCSSクラス（省略時 container）
+ *   $backUrl   : 戻るボタンのリンク先（省略時は自分のロール用メニュー）。
+ *                「一つ前の画面」を明示したいページは、この変数で個別に上書きする。
  */
 
 // ログイン状態を判定できるようにする（ホームボタンのリンク先決定に使用）
@@ -45,6 +47,14 @@ if ($headerUser !== null && ($headerUser['role'] ?? '') === 'manager') {
 } else {
     $homeUrl = $basePath . 'index.php';
 }
+
+// 戻るボタンのリンク先。既定は「一つ前の画面」＝自分のロール用メニュー。
+// history.back() だと、フォーム送信直後は送信前のフォーム状態に戻ってしまう
+// （例: シフト作成後に空のシフト作成画面へ戻る）ため、実際の画面遷移リンクにする。
+// ページ側で $backUrl を設定していれば、その値を優先する。
+if (!isset($backUrl)) {
+    $backUrl = $homeUrl;
+}
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -58,7 +68,7 @@ if ($headerUser !== null && ($headerUser['role'] ?? '') === 'manager') {
 <header class="site-header">
     <div class="header-left">
         <?php if ($showBack): ?>
-        <button type="button" class="btn-header" onclick="history.back()">← 戻る</button>
+        <a class="btn-header" href="<?php echo htmlspecialchars($backUrl); ?>">← 戻る</a>
         <?php endif; ?>
     </div>
     <div class="header-title"><?php echo htmlspecialchars($pageTitle); ?></div>
