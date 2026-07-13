@@ -67,10 +67,22 @@ function resetDemoDataFromSeed(PDO $pdo): void
     }
 
     foreach ($statements as $statement) {
-        $statement = trim($statement);
+        // seed.sql にはローカル開発用の USE 文が含まれるため、
+        // さくらインターネット等では接続中のDBをそのまま使うように読み飛ばす。
+        $statement = preg_replace('/^\s*--.*$/m', '', $statement);
+        $statement = trim($statement ?? '');
         if ($statement === '') {
             continue;
         }
+
+        if (preg_match('/^USE\s+/i', $statement) === 1) {
+            continue;
+        }
+
+        if (preg_match('/^CREATE\s+DATABASE\s+/i', $statement) === 1) {
+            continue;
+        }
+
         $pdo->exec($statement);
     }
 }
