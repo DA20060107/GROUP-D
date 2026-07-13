@@ -102,9 +102,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif ($startTime >= $endTime) {
             $errorMessage = '開始時刻は終了時刻より前にしてください。';
             $openShiftCreateModal = true;
-        } elseif ($isManualSubstituteRegistration && !preg_match('/^employee:\d+$/', $assigneeKey)) {
-            $errorMessage = '手動対応の代勤シフトは、従業員を担当者として選択してください。';
-            $openShiftCreateModal = true;
         } else {
             $employeeId = null;
             $managerUserId = null;
@@ -148,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $pdo->rollBack();
                             $errorMessage = '手動対応する休み申請が見つからないか、状態が変わっています。';
                             $openShiftCreateModal = true;
-                        } elseif ((int) $manualTarget['requester_employee_id'] === (int) $employeeId) {
+                        } elseif ($employeeId !== null && (int) $manualTarget['requester_employee_id'] === (int) $employeeId) {
                             $pdo->rollBack();
                             $errorMessage = '休み申請者本人は代勤担当者として登録できません。';
                             $openShiftCreateModal = true;
@@ -245,19 +242,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 ),
                                 $manualSubstituteFor
                             );
-                            insertNotificationForEmployee(
-                                $pdo,
-                                (int) $employeeId,
-                                'approval_result',
-                                '代勤シフトが登録されました',
-                                sprintf(
-                                    '%sの%s〜%sのシフトに、代勤担当として登録されました。',
-                                    date('n月j日', strtotime($shiftDate)),
-                                    substr($startTime, 0, 5),
-                                    substr($endTime, 0, 5)
-                                ),
-                                $manualSubstituteFor
+                            $substituteNotificationMessage = sprintf(
+                                '%sの%s〜%sのシフトに、代勤担当として登録されました。',
+                                date('n月j日', strtotime($shiftDate)),
+                                substr($startTime, 0, 5),
+                                substr($endTime, 0, 5)
                             );
+                            if ($employeeId !== null) {
+                                insertNotificationForEmployee(
+                                    $pdo,
+                                    (int) $employeeId,
+                                    'approval_result',
+                                    '代勤シフトが登録されました',
+                                    $substituteNotificationMessage,
+                                    $manualSubstituteFor
+                                );
+                            } elseif ($managerUserId !== null) {
+                                $pdo->prepare(
+                                    "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+                                     VALUES (:user_id, 'approval_result', '代勤シフトが登録されました', :message, 0, :leave_request_id)"
+                                )->execute([
+                                    'user_id'          => $managerUserId,
+                                    'message'          => $substituteNotificationMessage,
+                                    'leave_request_id' => $manualSubstituteFor,
+                                ]);
+                            }
                             $pdo->commit();
                             header('Location: shifts.php?msg=manual_substitute_created');
                             exit;
@@ -579,7 +588,7 @@ ob_start();
     <span class="calendar-add-plus">＋</span> シフトを作成
 </button>
 <div id="shift-create-form-detail" class="calendar-detail-source" hidden>
-    <?php if (($manualSubstituteRequest !== null && empty($activeEmployees)) || ($manualSubstituteRequest === null && empty($activeEmployees) && empty($activeManagers))): ?>
+    <?php if (empty($activeEmployees) && empty($activeManagers)): ?>
         <p class="page-description">シフト登録できる担当者が登録されていません。</p>
     <?php else: ?>
     <form method="post" action="shifts.php" data-shift-create-form>
@@ -606,7 +615,7 @@ ob_start();
                             <?php endforeach; ?>
                         </optgroup>
                         <?php endif; ?>
-                        <?php if (!empty($activeManagers) && $manualSubstituteRequest === null): ?>
+                        <?php if (!empty($activeManagers)): ?>
                         <optgroup label="店長">
                             <?php foreach ($activeManagers as $manager): ?>
                             <?php $optionValue = 'manager:' . (int) $manager['id']; ?>

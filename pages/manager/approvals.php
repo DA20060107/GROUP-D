@@ -456,6 +456,8 @@ require_once __DIR__ . '/../../app/includes/header.php';
                     }
                 }
             }
+            $acceptedCandidates = $candidateGroups['accepted']['candidates'];
+            $acceptedCandidateModalId = 'accepted-candidates-' . (int) $lr['leave_request_id'];
         ?>
         <article class="manager-work-card approval-card" id="lr-<?php echo (int) $lr['leave_request_id']; ?>">
             <div class="manager-work-card-header approval-card-header">
@@ -494,28 +496,14 @@ require_once __DIR__ . '/../../app/includes/header.php';
                             <div class="candidate-card-list approval-candidate-list">
                             <?php foreach ($group['candidates'] as $candidate): ?>
                                 <?php
-                                    $isAcceptedGroup = $groupKey === 'accepted';
                                     $candidateBadgeLabel = $group['label'];
                                     $candidateBadgeClass = $group['badge_class'];
                                     if ($groupKey === 'declined') {
                                         $candidateBadgeLabel = candidateStatusLabel($candidate['status']);
                                         $candidateBadgeClass = candidateStatusBadgeClass($candidate['status']);
                                     }
-                                    $confirmMessage = $candidate['candidate_name'] . 'さんを代勤者として承認します。よろしいですか？';
                                 ?>
-                                <?php if ($isAcceptedGroup): ?>
-                                <form method="post" action="approvals.php" class="approval-candidate-card-form">
-                                    <input type="hidden" name="action" value="approve">
-                                    <input type="hidden" name="leave_request_id" value="<?php echo (int) $lr['leave_request_id']; ?>">
-                                    <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
-                                    <button
-                                        type="submit"
-                                        class="candidate-card approval-candidate-card is-selectable"
-                                        onclick="return confirm(<?php echo htmlspecialchars(json_encode($confirmMessage, JSON_UNESCAPED_UNICODE), ENT_QUOTES); ?>);"
-                                    >
-                                <?php else: ?>
-                                    <div class="candidate-card approval-candidate-card is-not-selectable is-muted-candidate" aria-disabled="true">
-                                <?php endif; ?>
+                                    <div class="candidate-card approval-candidate-card <?php echo $groupKey === 'accepted' ? 'is-display-only' : 'is-not-selectable is-muted-candidate'; ?>" aria-disabled="true">
                                         <div class="candidate-card-main approval-candidate-main">
                                             <div>
                                                 <div class="approval-candidate-heading">
@@ -530,12 +518,7 @@ require_once __DIR__ . '/../../app/includes/header.php';
                                             <span>スキル：<?php echo htmlspecialchars(skillLevelLabel($candidate['skill_level'] ?? null)); ?></span>
                                             <span>勤続：<?php echo htmlspecialchars(scoreTenure($candidate['hire_date'] ?? null, date('Y-m-d'))['label']); ?></span>
                                         </div>
-                                <?php if ($isAcceptedGroup): ?>
-                                    </button>
-                                </form>
-                                <?php else: ?>
                                     </div>
-                                <?php endif; ?>
                             <?php endforeach; ?>
                             </div>
                         <?php endif; ?>
@@ -544,7 +527,54 @@ require_once __DIR__ . '/../../app/includes/header.php';
                 </div>
             <?php endif; ?>
 
+            <?php if (!empty($acceptedCandidates)): ?>
+            <div id="<?php echo htmlspecialchars($acceptedCandidateModalId); ?>" class="notification-detail-source" hidden>
+                <p class="manager-card-note">代勤登録する候補者を選択してください。</p>
+                <div class="candidate-card-list approval-candidate-list">
+                <?php foreach ($acceptedCandidates as $candidate): ?>
+                    <?php $confirmMessage = $candidate['candidate_name'] . 'さんを代勤者として承認します。よろしいですか？'; ?>
+                    <form method="post" action="approvals.php" class="approval-candidate-card-form">
+                        <input type="hidden" name="action" value="approve">
+                        <input type="hidden" name="leave_request_id" value="<?php echo (int) $lr['leave_request_id']; ?>">
+                        <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
+                        <button
+                            type="submit"
+                            class="candidate-card approval-candidate-card is-selectable"
+                            onclick="return confirm(<?php echo htmlspecialchars(json_encode($confirmMessage, JSON_UNESCAPED_UNICODE), ENT_QUOTES); ?>);"
+                        >
+                            <div class="candidate-card-main approval-candidate-main">
+                                <div>
+                                    <div class="approval-candidate-heading">
+                                        <strong><?php echo htmlspecialchars($candidate['candidate_name']); ?></strong>
+                                        <?php echo renderStatusBadge('代勤可能', 'badge-success'); ?>
+                                    </div>
+                                    <p class="approval-candidate-reason"><?php echo htmlspecialchars($candidate['match_reason'] ?? ''); ?></p>
+                                </div>
+                            </div>
+                            <div class="candidate-card-meta">
+                                <span>スコア：<?php echo $candidate['match_score'] !== null ? htmlspecialchars((string) $candidate['match_score']) . '点' : '-'; ?></span>
+                                <span>スキル：<?php echo htmlspecialchars(skillLevelLabel($candidate['skill_level'] ?? null)); ?></span>
+                                <span>勤続：<?php echo htmlspecialchars(scoreTenure($candidate['hire_date'] ?? null, date('Y-m-d'))['label']); ?></span>
+                            </div>
+                        </button>
+                    </form>
+                <?php endforeach; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <div class="manager-card-actions">
+            <?php if (!empty($acceptedCandidates)): ?>
+            <button
+                type="button"
+                class="btn"
+                data-manager-detail="<?php echo htmlspecialchars($acceptedCandidateModalId); ?>"
+                data-manager-title="<?php echo htmlspecialchars($lr['requester_name']); ?>さんの代勤可能者"
+            >
+                代勤可能者から代勤登録
+            </button>
+            <?php endif; ?>
+
             <?php if (in_array($lr['leave_status'], ['no_candidate', 'replacement_pending'], true)): ?>
             <form method="post" action="rematch_leave_request.php">
                 <input type="hidden" name="action" value="rematch">

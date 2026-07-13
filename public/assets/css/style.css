@@ -874,6 +874,10 @@ th {
     opacity: 0.72;
 }
 
+.approval-candidate-card.is-display-only {
+    cursor: default;
+}
+
 .approval-candidate-card.is-muted-candidate {
     border-color: #cfd8dc;
     background-color: #f5f7f9;
