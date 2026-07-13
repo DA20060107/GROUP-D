@@ -91,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'updat
 }
 
 // ------------------------------------------------------------
-// POST処理（初期データへリセット）
+// POST処理（テスト用初期データへリセット）
 // ------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset_demo_data') {
     try {
@@ -99,7 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'reset
         header('Location: matching_settings.php?msg=demo_reset');
         exit;
     } catch (Throwable $e) {
-        $errorMessage = '初期状態へのリセット中にエラーが発生しました。データベースの状態を確認してください。';
+        $errorMessage = 'テスト用初期状態へのリセット中にエラーが発生しました。データベースの状態を確認してください。';
     }
 }
 
@@ -255,7 +255,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delet
 if (isset($_GET['msg']) && $_GET['msg'] === 'updated') {
     $successMessage = '代勤候補抽出モードを更新しました。';
 } elseif (isset($_GET['msg']) && $_GET['msg'] === 'demo_reset') {
-    $successMessage = '初期状態にリセットしました。';
+    $successMessage = 'テスト用初期状態に戻しました。';
 }
 
 $currentMode = getCurrentMatchingMode($pdo);
@@ -367,18 +367,18 @@ require_once __DIR__ . '/../../app/includes/header.php';
 </div>
 
 <div class="section settings-danger-section">
-    <h2>初期データリセット</h2>
+    <h2>テスト用データリセット</h2>
     <p class="danger-message">
         現在のアカウント、シフト、勤務可能日、休み申請、代勤候補、通知、承認記録、キャンセル申請をすべて初期化し、
-        初期データに戻します。
+        テスト・発表用の初期データに戻します。
     </p>
     <form
         method="post"
         action="matching_settings.php"
-        data-confirm-message="現在のデータをすべて削除し、初期状態に戻します。この操作は元に戻せません。本当にリセットしますか？"
+        data-confirm-message="現在のデータをすべて削除し、テスト・発表用の初期状態に戻します。この操作は元に戻せません。本当にリセットしますか？"
     >
         <input type="hidden" name="action" value="reset_demo_data">
-        <button type="submit" class="btn btn-danger">初期データにリセット</button>
+        <button type="submit" class="btn btn-danger">テスト用初期データに戻す</button>
     </form>
 </div>
 
