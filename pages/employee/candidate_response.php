@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
         $pdo->beginTransaction();
         try {
             $stmt = $pdo->prepare(
-                'SELECT sc.id, sc.status AS candidate_status, lr.status AS leave_status
+                'SELECT sc.id, sc.leave_request_id, sc.status AS candidate_status, sc.notified_at, lr.status AS leave_status
                  FROM substitute_candidates sc
                  JOIN leave_requests lr ON lr.id = sc.leave_request_id
                  WHERE sc.id = :id AND sc.candidate_employee_id = :employee_id
@@ -56,12 +56,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
             } elseif ($responseTarget['leave_status'] === 'cancelled') {
                 $pdo->rollBack();
                 $errorMessage = 'この代勤依頼は、休み申請がキャンセルされたため回答できません。';
+            } elseif (!in_array($responseTarget['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)) {
+                $pdo->rollBack();
+                $errorMessage = 'この代勤提案は現在回答できません。';
+            } elseif ($responseTarget['notified_at'] === null) {
+                $pdo->rollBack();
+                $errorMessage = 'この代勤提案はまだ通知されていないため、回答できません。';
             } elseif (
-                !in_array($responseTarget['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)
-                || $responseTarget['candidate_status'] !== 'proposed'
+                $response === 'available'
+                && $responseTarget['candidate_status'] !== 'proposed'
             ) {
                 $pdo->rollBack();
-                $errorMessage = 'この代勤提案は既に回答済みか、現在は回答できません。';
+                $errorMessage = 'この代勤提案は既に回答済みです。';
+            } elseif (
+                $response === 'unavailable'
+                && !in_array($responseTarget['candidate_status'], ['proposed', 'accepted'], true)
+            ) {
+                $pdo->rollBack();
+                $errorMessage = 'この代勤提案は既に処理済みです。';
             } else {
                 $pdo->prepare(
                     'UPDATE substitute_candidates
@@ -74,10 +86,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'respo
 
                 if ($response === 'available') {
                     createCandidateAvailableNotification($pdo, $candidateId);
+                } else {
+                    // 代勤不可回答、または店長承認前の代勤可能回答キャンセル時は、辞退者を除外して再抽出する。
+                    $leaveRequestId = (int) $responseTarget['leave_request_id'];
+                    $retryResult = retrySubstituteMatching($pdo, $leaveRequestId, [$employeeId], 'candidate_declined');
+
+                    if ($retryResult['no_candidate']) {
+                        $pdo->prepare("UPDATE leave_requests SET status = 'no_candidate' WHERE id = :id AND status IN ('matching', 'no_candidate')")
+                            ->execute(['id' => $leaveRequestId]);
+                    } elseif ($responseTarget['leave_status'] === 'no_candidate') {
+                        $pdo->prepare("UPDATE leave_requests SET status = 'matching' WHERE id = :id")
+                            ->execute(['id' => $leaveRequestId]);
+                    }
                 }
                 $pdo->commit();
 
-                header('Location: candidate_response.php?candidate_id=' . $candidateId . '&msg=responded&result=' . $response);
+                $result = ($response === 'unavailable' && $responseTarget['candidate_status'] === 'accepted')
+                    ? 'cancelled_before_approval'
+                    : $response;
+                header('Location: candidate_response.php?candidate_id=' . $candidateId . '&msg=responded&result=' . $result);
                 exit;
             }
         } catch (Throwable $e) {
@@ -94,8 +121,10 @@ if (isset($_GET['msg']) && $_GET['msg'] === 'responded') {
     $result = $_GET['result'] ?? '';
     if ($result === 'available') {
         $successMessage = '「代勤可能」で回答しました。店長に通知しました。';
+    } elseif ($result === 'cancelled_before_approval') {
+        $successMessage = '店長承認前の代勤可能回答をキャンセルしました。別の代勤候補を再抽出しました。';
     } elseif ($result === 'unavailable') {
-        $successMessage = '「代勤不可」で回答しました。';
+        $successMessage = '「代勤不可」で回答しました。別の代勤候補を再抽出しました。';
     } else {
         $successMessage = '回答を保存しました。';
     }
@@ -120,7 +149,9 @@ if ($candidateId > 0) {
          JOIN leave_requests lr ON lr.id = sc.leave_request_id
          JOIN shifts s ON s.id = lr.shift_id
          JOIN employees req ON req.id = lr.employee_id
-         WHERE sc.id = :candidate_id AND sc.candidate_employee_id = :employee_id'
+         WHERE sc.id = :candidate_id
+           AND sc.candidate_employee_id = :employee_id
+           AND sc.notified_at IS NOT NULL'
     );
     $stmt->execute(['candidate_id' => $candidateId, 'employee_id' => $employeeId]);
     $candidate = $stmt->fetch();
@@ -149,72 +180,78 @@ require_once __DIR__ . '/../../app/includes/header.php';
 <?php else: ?>
 
 <div class="section">
-    <table>
-        <tbody>
-            <tr>
-                <th>休み申請者</th>
-                <td><?php echo htmlspecialchars($candidate['requester_name']); ?></td>
-            </tr>
-            <tr>
-                <th>勤務日</th>
-                <td><?php echo htmlspecialchars($candidate['shift_date']); ?></td>
-            </tr>
-            <tr>
-                <th>開始時刻</th>
-                <td><?php echo htmlspecialchars(substr($candidate['start_time'], 0, 5)); ?></td>
-            </tr>
-            <tr>
-                <th>終了時刻</th>
-                <td><?php echo htmlspecialchars(substr($candidate['end_time'], 0, 5)); ?></td>
-            </tr>
-            <tr>
-                <th>担当業務・ポジション</th>
-                <td><?php echo htmlspecialchars($candidate['position'] ?? ''); ?></td>
-            </tr>
-            <tr>
-                <th>申請理由</th>
-                <td><?php echo htmlspecialchars($candidate['leave_reason'] ?? ''); ?></td>
-            </tr>
-            <?php if (!empty($candidate['match_reason'])): ?>
-            <tr>
-                <th>マッチ理由</th>
-                <td><?php echo htmlspecialchars($candidate['match_reason']); ?></td>
-            </tr>
-            <?php endif; ?>
-            <tr>
-                <th>回答状況</th>
-                <td><?php echo renderStatusBadge(candidateStatusLabel($candidate['status']), candidateStatusBadgeClass($candidate['status'])); ?></td>
-            </tr>
-        </tbody>
-    </table>
-</div>
+    <article class="candidate-response-card">
+        <div class="manager-work-card-header">
+            <div>
+                <h2><?php echo htmlspecialchars($candidate['shift_date']); ?> の代勤依頼</h2>
+                <p class="approval-shift-summary">
+                    <?php echo htmlspecialchars(substr($candidate['start_time'], 0, 5)); ?>〜<?php echo htmlspecialchars(substr($candidate['end_time'], 0, 5)); ?>
+                    <?php if (!empty($candidate['position'])): ?>
+                        ・<?php echo htmlspecialchars($candidate['position']); ?>
+                    <?php endif; ?>
+                </p>
+            </div>
+            <?php echo renderStatusBadge(candidateStatusLabel($candidate['status']), candidateStatusBadgeClass($candidate['status'])); ?>
+        </div>
 
-<div class="section">
+        <div class="manager-detail-grid">
+            <div><span>休み申請者</span><strong><?php echo htmlspecialchars($candidate['requester_name']); ?></strong></div>
+            <div><span>勤務日</span><strong><?php echo htmlspecialchars($candidate['shift_date']); ?></strong></div>
+            <div><span>時間</span><strong><?php echo htmlspecialchars(substr($candidate['start_time'], 0, 5)); ?>〜<?php echo htmlspecialchars(substr($candidate['end_time'], 0, 5)); ?></strong></div>
+            <div><span>担当業務</span><strong><?php echo htmlspecialchars($candidate['position'] ?? '-'); ?></strong></div>
+        </div>
+
+        <div class="candidate-response-note">
+            <span>申請理由</span>
+            <p><?php echo nl2br(htmlspecialchars($candidate['leave_reason'] ?? '-')); ?></p>
+        </div>
+
+        <?php if (!empty($candidate['match_reason'])): ?>
+        <div class="candidate-response-note">
+            <span>マッチ理由</span>
+            <p><?php echo htmlspecialchars($candidate['match_reason']); ?></p>
+        </div>
+        <?php endif; ?>
+
+        <div class="manager-card-actions">
     <?php if ($candidate['leave_status'] === 'cancelled'): ?>
-    <p class="page-description">この代勤依頼は、休み申請がキャンセルされたため回答できません。</p>
+            <p class="page-description">この代勤依頼は、休み申請がキャンセルされたため回答できません。</p>
     <?php elseif ($candidate['status'] === 'expired'): ?>
-    <p class="page-description">この代勤依頼は無効になっているため、回答は不要です。</p>
+            <p class="page-description">この代勤依頼は無効になっているため、回答は不要です。</p>
     <?php elseif (
         $candidate['status'] === 'proposed'
         && in_array($candidate['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)
     ): ?>
-    <form method="post" action="candidate_response.php" style="display:inline;">
-        <input type="hidden" name="action" value="respond">
-        <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
-        <input type="hidden" name="response" value="available">
-        <button type="submit" class="btn">代勤可能</button>
-    </form>
-    <form method="post" action="candidate_response.php" style="display:inline;">
-        <input type="hidden" name="action" value="respond">
-        <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
-        <input type="hidden" name="response" value="unavailable">
-        <button type="submit" class="btn btn-secondary">代勤不可</button>
-    </form>
+            <form method="post" action="candidate_response.php">
+                <input type="hidden" name="action" value="respond">
+                <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
+                <input type="hidden" name="response" value="available">
+                <button type="submit" class="btn">代勤可能</button>
+            </form>
+            <form method="post" action="candidate_response.php">
+                <input type="hidden" name="action" value="respond">
+                <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
+                <input type="hidden" name="response" value="unavailable">
+                <button type="submit" class="btn btn-secondary">代勤不可</button>
+            </form>
+    <?php elseif (
+        $candidate['status'] === 'accepted'
+        && in_array($candidate['leave_status'], ['matching', 'no_candidate', 'replacement_pending'], true)
+    ): ?>
+            <p class="page-description">代勤可能で回答済みです。店長が承認する前であればキャンセルできます。</p>
+            <form method="post" action="candidate_response.php" onsubmit="return confirm('店長承認前の代勤可能回答をキャンセルします。よろしいですか？');">
+                <input type="hidden" name="action" value="respond">
+                <input type="hidden" name="candidate_id" value="<?php echo (int) $candidate['id']; ?>">
+                <input type="hidden" name="response" value="unavailable">
+                <button type="submit" class="btn btn-secondary">代勤をキャンセル</button>
+            </form>
     <?php elseif (in_array($candidate['status'], ['accepted', 'declined'], true)): ?>
-    <p class="page-description">この提案には既に回答済みです（再回答はできません）。</p>
+            <p class="page-description">この提案には既に回答済みです（再回答はできません）。</p>
     <?php else: ?>
-    <p class="page-description">この代勤依頼は既に処理済みのため、回答できません。</p>
+            <p class="page-description">この代勤依頼は既に処理済みのため、回答できません。</p>
     <?php endif; ?>
+        </div>
+    </article>
 </div>
 
 <div class="section">

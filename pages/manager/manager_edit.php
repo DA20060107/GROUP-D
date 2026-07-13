@@ -7,6 +7,8 @@ $pageTitle = '店長情報編集';
 $basePath  = '../../public/';
 $showBack  = true;
 $showHome  = true;
+// 一つ前の画面は店長アカウント一覧
+$backUrl   = 'manager_list.php';
 
 require_once __DIR__ . '/../../app/includes/header.php';
 

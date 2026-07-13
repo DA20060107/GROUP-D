@@ -5,7 +5,7 @@
 ?>
 </main>
 <footer class="site-footer">
-    <p>シフト代勤マッチング支援システム（開発用土台）</p>
+    <p>シフト代勤マッチング支援システム</p>
 </footer>
 </body>
 </html>

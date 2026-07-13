@@ -83,8 +83,16 @@ function createAfterApprovalCancellationRequest(
 
         if (
             $target['leave_status'] !== 'approved'
-            || $target['shift_status'] !== 'substituted'
-            || (int) $target['current_shift_employee_id'] === $employeeId
+            || !(
+                (
+                    $target['shift_status'] === 'substituted'
+                    && (int) $target['current_shift_employee_id'] !== $employeeId
+                )
+                || (
+                    $target['shift_status'] === 'leave_approved'
+                    && (int) $target['current_shift_employee_id'] === $employeeId
+                )
+            )
         ) {
             $pdo->rollBack();
             return 'not_eligible';
@@ -203,13 +211,23 @@ function decideAfterApprovalCancellationRequest(
         $stmt = $pdo->prepare(
             'SELECT lr.id, lr.employee_id AS requester_employee_id, lr.status AS leave_status,
                     s.id AS shift_id, s.employee_id AS current_shift_employee_id,
-                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time
+                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time,
+                    manual_s.id AS manual_shift_id,
+                    manual_s.employee_id AS manual_shift_employee_id,
+                    manual_s.status AS manual_shift_status
              FROM leave_requests lr
              JOIN shifts s ON s.id = lr.shift_id
+             LEFT JOIN shifts manual_s
+               ON manual_s.related_leave_request_id = lr.id
+              AND manual_s.employee_id = :substitute_employee_id
+              AND manual_s.status = "substituted"
              WHERE lr.id = :leave_request_id
              FOR UPDATE'
         );
-        $stmt->execute(['leave_request_id' => $request['leave_request_id']]);
+        $stmt->execute([
+            'leave_request_id'       => $request['leave_request_id'],
+            'substitute_employee_id' => $request['requested_by_employee_id'],
+        ]);
         $target = $stmt->fetch();
 
         if ($target === false) {
@@ -222,17 +240,36 @@ function decideAfterApprovalCancellationRequest(
         $endLabel = substr($target['end_time'], 0, 5);
 
         if ($decision === 'approved') {
+            $isManualApprovedLeave = $target['shift_status'] === 'leave_approved'
+                && (int) $target['current_shift_employee_id'] === (int) $target['requester_employee_id'];
+            $isNormalSubstitutedLeave = $target['shift_status'] === 'substituted'
+                && (int) $target['current_shift_employee_id'] !== (int) $target['requester_employee_id'];
+
             if (
                 $target['leave_status'] !== 'approved'
-                || $target['shift_status'] !== 'substituted'
-                || (int) $target['current_shift_employee_id'] === (int) $target['requester_employee_id']
+                || (!$isManualApprovedLeave && !$isNormalSubstitutedLeave)
                 || (int) $request['requested_by_employee_id'] !== (int) $target['requester_employee_id']
             ) {
                 $pdo->rollBack();
                 return 'not_eligible';
             }
 
-            $substituteEmployeeId = (int) $target['current_shift_employee_id'];
+            $substituteEmployeeIds = [];
+            if ($isNormalSubstitutedLeave) {
+                $substituteEmployeeIds[] = (int) $target['current_shift_employee_id'];
+            } else {
+                $stmt = $pdo->prepare(
+                    "SELECT DISTINCT employee_id
+                     FROM shifts
+                     WHERE related_leave_request_id = :leave_request_id
+                       AND employee_id IS NOT NULL
+                       AND status IN ('substituted', 'replacement_pending')"
+                );
+                $stmt->execute(['leave_request_id' => $target['id']]);
+                foreach ($stmt->fetchAll() as $row) {
+                    $substituteEmployeeIds[] = (int) $row['employee_id'];
+                }
+            }
 
             $pdo->prepare(
                 "UPDATE shifts
@@ -242,6 +279,15 @@ function decideAfterApprovalCancellationRequest(
                 'employee_id' => $target['requester_employee_id'],
                 'shift_id'    => $target['shift_id'],
             ]);
+
+            if ($isManualApprovedLeave) {
+                $pdo->prepare(
+                    "UPDATE shifts
+                     SET status = 'cancelled'
+                     WHERE related_leave_request_id = :leave_request_id
+                       AND status IN ('substituted', 'replacement_pending')"
+                )->execute(['leave_request_id' => $target['id']]);
+            }
 
             $pdo->prepare(
                 "UPDATE leave_requests
@@ -271,19 +317,21 @@ function decideAfterApprovalCancellationRequest(
                 ),
                 (int) $target['id']
             );
-            insertNotificationForEmployee(
-                $pdo,
-                $substituteEmployeeId,
-                'after_approval_cancel_approved',
-                '代勤予定がキャンセルされました',
-                sprintf(
-                    '%sの%s〜%sの代勤予定は、休み申請者のキャンセルが承認されたため取り消されました。',
-                    $shiftDateLabel,
-                    $startLabel,
-                    $endLabel
-                ),
-                (int) $target['id']
-            );
+            foreach (array_unique($substituteEmployeeIds) as $substituteEmployeeId) {
+                insertNotificationForEmployee(
+                    $pdo,
+                    $substituteEmployeeId,
+                    'after_approval_cancel_approved',
+                    '代勤予定がキャンセルされました',
+                    sprintf(
+                        '%sの%s〜%sの代勤予定は、休み申請者のキャンセルが承認されたため取り消されました。',
+                        $shiftDateLabel,
+                        $startLabel,
+                        $endLabel
+                    ),
+                    (int) $target['id']
+                );
+            }
 
             $pdo->commit();
             return 'approved';
@@ -351,13 +399,23 @@ function createSubstituteAfterApprovalCancellationRequest(
         $stmt = $pdo->prepare(
             'SELECT lr.id, lr.status AS leave_status, lr.employee_id AS requester_employee_id,
                     s.id AS shift_id, s.employee_id AS current_shift_employee_id,
-                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time
+                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time,
+                    manual_s.id AS manual_shift_id,
+                    manual_s.employee_id AS manual_shift_employee_id,
+                    manual_s.status AS manual_shift_status
              FROM leave_requests lr
              JOIN shifts s ON s.id = lr.shift_id
+             LEFT JOIN shifts manual_s
+               ON manual_s.related_leave_request_id = lr.id
+              AND manual_s.employee_id = :employee_id_for_manual
+              AND manual_s.status = "substituted"
              WHERE lr.id = :leave_request_id
              FOR UPDATE'
         );
-        $stmt->execute(['leave_request_id' => $leaveRequestId]);
+        $stmt->execute([
+            'leave_request_id'      => $leaveRequestId,
+            'employee_id_for_manual' => $employeeId,
+        ]);
         $target = $stmt->fetch();
 
         if ($target === false) {
@@ -367,10 +425,14 @@ function createSubstituteAfterApprovalCancellationRequest(
 
         // 承認済み・代勤反映済みで、かつ申請者がログイン中の代勤者本人であること
         // （休み申請者本人はこの種別の申請を出せない）
+        $isNormalSubstitute = $target['shift_status'] === 'substituted'
+            && (int) $target['current_shift_employee_id'] === $employeeId;
+        $isManualSubstitute = $target['manual_shift_id'] !== null
+            && $target['manual_shift_status'] === 'substituted'
+            && (int) $target['manual_shift_employee_id'] === $employeeId;
         if (
             $target['leave_status'] !== 'approved'
-            || $target['shift_status'] !== 'substituted'
-            || (int) $target['current_shift_employee_id'] !== $employeeId
+            || (!$isNormalSubstitute && !$isManualSubstitute)
             || (int) $target['requester_employee_id'] === $employeeId
         ) {
             $pdo->rollBack();
@@ -503,13 +565,23 @@ function decideSubstituteAfterApprovalCancellationRequest(
         $stmt = $pdo->prepare(
             'SELECT lr.id, lr.employee_id AS requester_employee_id, lr.status AS leave_status,
                     s.id AS shift_id, s.employee_id AS current_shift_employee_id,
-                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time
+                    s.status AS shift_status, s.shift_date, s.start_time, s.end_time,
+                    manual_s.id AS manual_shift_id,
+                    manual_s.employee_id AS manual_shift_employee_id,
+                    manual_s.status AS manual_shift_status
              FROM leave_requests lr
              JOIN shifts s ON s.id = lr.shift_id
+             LEFT JOIN shifts manual_s
+               ON manual_s.related_leave_request_id = lr.id
+              AND manual_s.employee_id = :substitute_employee_id
+              AND manual_s.status = "substituted"
              WHERE lr.id = :leave_request_id
              FOR UPDATE'
         );
-        $stmt->execute(['leave_request_id' => $request['leave_request_id']]);
+        $stmt->execute([
+            'leave_request_id'       => $request['leave_request_id'],
+            'substitute_employee_id' => $request['requested_by_employee_id'],
+        ]);
         $target = $stmt->fetch();
 
         if ($target === false) {
@@ -523,11 +595,19 @@ function decideSubstituteAfterApprovalCancellationRequest(
         $substituteEmployeeId = (int) $request['requested_by_employee_id'];
 
         if ($decision === 'approved') {
+            $isNormalSubstitute = $target['shift_status'] === 'substituted'
+                && (int) $target['current_shift_employee_id'] === $substituteEmployeeId;
+            $isManualSubstitute = $target['manual_shift_id'] !== null
+                && $target['manual_shift_status'] === 'substituted'
+                && (int) $target['manual_shift_employee_id'] === $substituteEmployeeId;
+
             if (
                 $target['leave_status'] !== 'approved'
-                || $target['shift_status'] !== 'substituted'
-                || (int) $target['current_shift_employee_id'] !== $substituteEmployeeId
-                || (int) $target['current_shift_employee_id'] === (int) $target['requester_employee_id']
+                || (!$isNormalSubstitute && !$isManualSubstitute)
+                || (
+                    $isNormalSubstitute
+                    && (int) $target['current_shift_employee_id'] === (int) $target['requester_employee_id']
+                )
             ) {
                 $pdo->rollBack();
                 return 'not_eligible';
@@ -556,15 +636,48 @@ function decideSubstituteAfterApprovalCancellationRequest(
                 )->execute(['id' => $approval['substitute_candidate_id']]);
             }
 
+            // 手動代勤登録では approvals.substitute_candidate_id が NULL のため、
+            // キャンセルした代勤者本人の候補レコードが accepted のまま残る可能性がある。
+            // 再調整時に同じ従業員を再選択できないよう、本人の候補レコードも無効化する。
+            $pdo->prepare(
+                "UPDATE substitute_candidates
+                 SET status = 'expired'
+                 WHERE leave_request_id = :leave_request_id
+                   AND candidate_employee_id = :employee_id
+                   AND status IN ('proposed', 'accepted')"
+            )->execute([
+                'leave_request_id' => $target['id'],
+                'employee_id'      => $substituteEmployeeId,
+            ]);
+
             // 休み申請・シフトを「代勤者再調整中」にする
             // 重要: shifts.employee_id は変更しない（元の休み申請者へ戻さない）
             $pdo->prepare(
                 "UPDATE leave_requests SET status = 'replacement_pending' WHERE id = :id"
             )->execute(['id' => $target['id']]);
 
-            $pdo->prepare(
-                "UPDATE shifts SET status = 'replacement_pending' WHERE id = :shift_id"
-            )->execute(['shift_id' => $target['shift_id']]);
+            if ($isManualSubstitute) {
+                $pdo->prepare(
+                    "UPDATE shifts
+                     SET status = 'replacement_pending'
+                     WHERE id = :manual_shift_id"
+                )->execute(['manual_shift_id' => $target['manual_shift_id']]);
+
+                $pdo->prepare(
+                    "UPDATE shifts
+                     SET employee_id = :employee_id,
+                         manager_user_id = NULL,
+                         status = 'leave_approved'
+                     WHERE id = :shift_id"
+                )->execute([
+                    'employee_id' => $target['requester_employee_id'],
+                    'shift_id'    => $target['shift_id'],
+                ]);
+            } else {
+                $pdo->prepare(
+                    "UPDATE shifts SET status = 'replacement_pending' WHERE id = :shift_id"
+                )->execute(['shift_id' => $target['shift_id']]);
+            }
 
             $pdo->prepare(
                 "UPDATE cancellation_requests

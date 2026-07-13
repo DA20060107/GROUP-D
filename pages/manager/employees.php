@@ -3,7 +3,6 @@
  * 従業員情報管理画面（店長用）
  *
  * - 従業員一覧の表示・新規登録（ログインアカウント同時作成）・編集・削除
- * - 従業員ごとの勤務可能日確認（店長は登録しない。確認のみ）
  *
  * 削除時の注意：
  *   employees の削除に伴い、外部キー制約（ON DELETE CASCADE）により
@@ -15,7 +14,7 @@
  *   休み申請・代勤候補・代勤承認・キャンセル申請など、他の従業員と関連するデータが
  *   1件でも残っている場合は、削除すると他の従業員の履歴まで巻き添えで消えてしまうため、
  *   getEmployeeDeletionBlockers() の判定により削除をブロックする（一覧画面ではボタンが
- *   「削除不可」表示に変わり、押すと理由を説明する警告ダイアログが出る。サーバー側でも
+ *   削除できない理由の詳細表示に変わる。サーバー側でも
  *   同じ判定を行い、直接POSTされた場合でもブロックする）。
  */
 
@@ -92,6 +91,10 @@ $successMessage = '';
 // 編集フォームに表示する従業員データ（再表示用）
 $editEmployee = null;
 
+// 入力エラーや絞り込み後に自動で開くモーダル
+$initialManagerModalDetail = '';
+$initialManagerModalTitle = '';
+
 // 新規登録フォームの再表示用データ
 $newEmployeeForm = [
     'name'        => '',
@@ -135,14 +138,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($name === '' || $username === '' || $password === '') {
             $errorMessage = '氏名・ログインID・初期パスワードは必須です。';
+            $initialManagerModalDetail = 'employee-create-form-detail';
+            $initialManagerModalTitle = '従業員の新規登録';
         } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
             $errorMessage = 'スキルレベルは1〜5の範囲で指定してください。';
+            $initialManagerModalDetail = 'employee-create-form-detail';
+            $initialManagerModalTitle = '従業員の新規登録';
         } else {
             $stmt = $pdo->prepare('SELECT COUNT(*) FROM users WHERE username = :username');
             $stmt->execute(['username' => $username]);
 
             if ((int) $stmt->fetchColumn() > 0) {
                 $errorMessage = 'このログインIDは既に使用されています。別のログインIDを指定してください。';
+                $initialManagerModalDetail = 'employee-create-form-detail';
+                $initialManagerModalTitle = '従業員の新規登録';
             } else {
                 try {
                     $pdo->beginTransaction();
@@ -180,6 +189,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (PDOException $e) {
                     $pdo->rollBack();
                     $errorMessage = '登録に失敗しました。エラー詳細: ' . $e->getMessage();
+                    $initialManagerModalDetail = 'employee-create-form-detail';
+                    $initialManagerModalTitle = '従業員の新規登録';
                 }
             }
         }
@@ -406,38 +417,6 @@ if (!$isEditMode) {
     )->fetchAll();
 }
 
-// ------------------------------------------------------------
-// 従業員ごとの勤務可能日確認（絞り込み対応）
-// ------------------------------------------------------------
-$availabilityEmployeeId = null;
-if (!$isEditMode && isset($_GET['availability_employee_id']) && $_GET['availability_employee_id'] !== '') {
-    $availabilityEmployeeId = (int) $_GET['availability_employee_id'];
-}
-
-$availabilityList = [];
-if ($isEditMode) {
-    $availabilityList = [];
-} elseif ($availabilityEmployeeId !== null) {
-    $stmt = $pdo->prepare(
-        'SELECT a.*, e.name AS employee_name
-         FROM availability a
-         JOIN employees e ON e.id = a.employee_id
-         WHERE a.employee_id = :employee_id
-         ORDER BY a.available_date, a.start_time'
-    );
-    $stmt->execute(['employee_id' => $availabilityEmployeeId]);
-} else {
-    $stmt = $pdo->query(
-        'SELECT a.*, e.name AS employee_name
-         FROM availability a
-         JOIN employees e ON e.id = a.employee_id
-         ORDER BY a.available_date, a.start_time'
-    );
-}
-if (!$isEditMode) {
-    $availabilityList = $stmt->fetchAll();
-}
-
 // 編集フォーム表示中の「戻る」先は、一つ前の画面である従業員一覧（このページの一覧表示）にする
 if ($isEditMode) {
     $backUrl = 'employees.php';
@@ -458,7 +437,7 @@ function ef($editEmployee, $key)
     <?php if ($isEditMode): ?>
     従業員の基本情報とログインアカウントを編集します。
     <?php else: ?>
-    従業員の基本情報・ログインアカウントの管理と、従業員ごとの勤務可能日の確認を行います。
+    従業員の基本情報・ログインアカウントを管理します。
     <?php endif; ?>
 </p>
 
@@ -523,8 +502,85 @@ function ef($editEmployee, $key)
 <?php endif; ?>
 
 <?php if (!$isEditMode): ?>
-<div class="section">
-    <h2>従業員の新規登録</h2>
+<div class="section employee-management-panel">
+    <div class="employee-management-header">
+        <div>
+            <h2>従業員一覧</h2>
+        </div>
+        <div class="employee-management-actions">
+            <button type="button" class="btn" data-manager-detail="employee-create-form-detail" data-manager-title="従業員の新規登録">＋ 従業員を登録</button>
+        </div>
+    </div>
+
+    <div class="employee-card-list">
+        <?php foreach ($employees as $emp): ?>
+        <?php
+            $detailId = 'employee-detail-' . (int) $emp['id'];
+            $deleteBlockers = getEmployeeDeletionBlockers($pdo, (int) $emp['id']);
+            $blockerId = 'employee-delete-blockers-' . (int) $emp['id'];
+        ?>
+        <article
+            class="employee-card employee-card-clickable"
+            role="button"
+            tabindex="0"
+            data-manager-card-detail="<?php echo htmlspecialchars($detailId); ?>"
+            data-manager-card-title="従業員詳細"
+        >
+            <div class="employee-card-main">
+                <div class="employee-card-summary">
+                    <h3><?php echo htmlspecialchars($emp['name']); ?></h3>
+                    <div class="employee-card-meta">
+                        <span>ログインID：<?php echo htmlspecialchars($emp['username'] ?? '-'); ?></span>
+                        <span>ポジション：<?php echo htmlspecialchars($emp['position'] ?? '-'); ?></span>
+                        <span>スキル：<?php echo htmlspecialchars(skillLevelLabel($emp['skill_level'] ?? null)); ?></span>
+                    </div>
+                </div>
+            </div>
+            <div class="employee-card-actions">
+                <a class="employee-icon-button" href="employees.php?edit=<?php echo (int) $emp['id']; ?>" aria-label="<?php echo htmlspecialchars($emp['name']); ?>さんを編集" title="編集">✎</a>
+                <?php if (empty($deleteBlockers)): ?>
+                <form method="post" action="employees.php"
+                      onsubmit="return confirm('<?php echo htmlspecialchars($emp['name'], ENT_QUOTES); ?>さんを削除しますか？この操作は取り消せません。');">
+                    <input type="hidden" name="action" value="delete_employee">
+                    <input type="hidden" name="employee_id" value="<?php echo (int) $emp['id']; ?>">
+                    <button type="submit" class="employee-icon-button employee-icon-button-danger" aria-label="<?php echo htmlspecialchars($emp['name']); ?>さんを削除" title="削除">🗑</button>
+                </form>
+                <?php else: ?>
+                <button type="button" class="employee-icon-button employee-icon-button-danger" data-manager-detail="<?php echo htmlspecialchars($blockerId); ?>" data-manager-title="削除できない理由" aria-label="<?php echo htmlspecialchars($emp['name']); ?>さんを削除" title="削除">🗑</button>
+                <?php endif; ?>
+            </div>
+        </article>
+
+        <div id="<?php echo htmlspecialchars($detailId); ?>" class="notification-detail-source" hidden>
+            <table>
+                <tbody>
+                    <tr><th>ID</th><td><?php echo (int) $emp['id']; ?></td></tr>
+                    <tr><th>氏名</th><td><?php echo htmlspecialchars($emp['name']); ?></td></tr>
+                    <tr><th>ログインID</th><td><?php echo htmlspecialchars($emp['username'] ?? '-'); ?></td></tr>
+                    <tr><th>メールアドレス</th><td><?php echo htmlspecialchars($emp['email'] ?? '-'); ?></td></tr>
+                    <tr><th>電話番号</th><td><?php echo htmlspecialchars($emp['phone'] ?? '-'); ?></td></tr>
+                    <tr><th>入社日</th><td><?php echo htmlspecialchars($emp['hire_date'] ?? '-'); ?></td></tr>
+                    <tr><th>担当可能業務・ポジション</th><td><?php echo htmlspecialchars($emp['position'] ?? '-'); ?></td></tr>
+                    <tr><th>スキルレベル</th><td><?php echo htmlspecialchars(skillLevelLabel($emp['skill_level'] ?? null)); ?></td></tr>
+                    <tr><th>備考</th><td><?php echo nl2br(htmlspecialchars($emp['note'] ?? '-')); ?></td></tr>
+                </tbody>
+            </table>
+        </div>
+        <?php if (!empty($deleteBlockers)): ?>
+        <div id="<?php echo htmlspecialchars($blockerId); ?>" class="notification-detail-source" hidden>
+            <p><?php echo htmlspecialchars($emp['name']); ?>さんは削除できません。他の従業員の記録に影響するため、削除をブロックしています。</p>
+            <ul>
+                <?php foreach ($deleteBlockers as $reason): ?>
+                <li><?php echo htmlspecialchars($reason); ?></li>
+                <?php endforeach; ?>
+            </ul>
+        </div>
+        <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+</div>
+
+<div id="employee-create-form-detail" class="notification-detail-source" hidden>
     <p class="page-description">
         新規登録時に、ログイン用アカウント（role: employee）も同時に作成されます。
     </p>
@@ -576,110 +632,91 @@ function ef($editEmployee, $key)
     </form>
 </div>
 
-<div class="section">
-    <h2>従業員一覧</h2>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>氏名</th>
-                <th>ログインID</th>
-                <th>メールアドレス</th>
-                <th>電話番号</th>
-                <th>入社日</th>
-                <th>ポジション</th>
-                <th>スキルレベル</th>
-                <th style="width: 26%;">備考</th>
-                <th>操作</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($employees as $emp): ?>
-            <tr>
-                <td><?php echo (int) $emp['id']; ?></td>
-                <td><?php echo htmlspecialchars($emp['name']); ?></td>
-                <td><?php echo htmlspecialchars($emp['username'] ?? '-'); ?></td>
-                <td><?php echo htmlspecialchars($emp['email'] ?? ''); ?></td>
-                <td><?php echo htmlspecialchars($emp['phone'] ?? ''); ?></td>
-                <td><?php echo htmlspecialchars($emp['hire_date'] ?? ''); ?></td>
-                <td><?php echo htmlspecialchars($emp['position'] ?? ''); ?></td>
-                <td><?php echo htmlspecialchars(skillLevelLabel($emp['skill_level'] ?? null)); ?></td>
-                <td><?php echo htmlspecialchars($emp['note'] ?? ''); ?></td>
-                <td>
-                    <div class="table-actions">
-                        <a class="btn btn-secondary" href="employees.php?edit=<?php echo (int) $emp['id']; ?>">編集</a>
-                        <?php $deleteBlockers = getEmployeeDeletionBlockers($pdo, (int) $emp['id']); ?>
-                        <?php if (empty($deleteBlockers)): ?>
-                        <form method="post" action="employees.php"
-                              onsubmit="return confirm('<?php echo htmlspecialchars($emp['name'], ENT_QUOTES); ?>さんを削除しますか？この操作は取り消せません。');">
-                            <input type="hidden" name="action" value="delete_employee">
-                            <input type="hidden" name="employee_id" value="<?php echo (int) $emp['id']; ?>">
-                            <button type="submit" class="btn btn-secondary">削除</button>
-                        </form>
-                        <?php else: ?>
-                        <?php
-                            $blockMessage = $emp['name'] . 'さんは削除できません。\n\n【理由】\n・'
-                                . implode('\n・', $deleteBlockers)
-                                . '\n\n他の従業員の記録に影響するため、削除をブロックしています。';
-                        ?>
-                        <button type="button" class="btn btn-secondary"
-                                onclick="alert('<?php echo htmlspecialchars($blockMessage, ENT_QUOTES); ?>');">削除不可</button>
-                        <?php endif; ?>
-                    </div>
-                </td>
-            </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
+<div class="calendar-modal" data-manager-modal hidden>
+    <div class="calendar-modal-backdrop" data-manager-modal-close></div>
+    <div class="calendar-modal-panel" role="dialog" aria-modal="true" aria-labelledby="manager-modal-title">
+        <button type="button" class="calendar-modal-close" data-manager-modal-close aria-label="閉じる">×</button>
+        <h3 id="manager-modal-title" data-manager-modal-title>詳細</h3>
+        <div class="calendar-modal-body" data-manager-modal-body></div>
+    </div>
 </div>
 
-<div class="section">
-    <h2>従業員ごとの勤務可能日確認</h2>
-    <p class="page-description">
-        勤務可能日は従業員本人が登録します。店長はここで内容を確認できます。
-    </p>
-    <form class="form-group" method="get" action="employees.php">
-        <label for="availability_employee_id">従業員で絞り込み</label>
-        <select id="availability_employee_id" name="availability_employee_id" onchange="this.form.submit()">
-            <option value="">すべて表示</option>
-            <?php foreach ($employees as $emp): ?>
-                <option value="<?php echo (int) $emp['id']; ?>" <?php echo $availabilityEmployeeId === (int) $emp['id'] ? 'selected' : ''; ?>>
-                    <?php echo htmlspecialchars($emp['name']); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-        <noscript><button type="submit" class="btn btn-secondary">絞り込み</button></noscript>
-    </form>
+<script>
+document.addEventListener('click', function (event) {
+    const modal = document.querySelector('[data-manager-modal]');
+    if (!modal) {
+        return;
+    }
 
-    <table>
-        <thead>
-            <tr>
-                <th>従業員名</th>
-                <th>勤務可能日</th>
-                <th>開始時刻</th>
-                <th>終了時刻</th>
-                <th>備考</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php if (empty($availabilityList)): ?>
-            <tr>
-                <td colspan="5">登録された勤務可能日はありません。</td>
-            </tr>
-            <?php else: ?>
-                <?php foreach ($availabilityList as $a): ?>
-                <tr>
-                    <td><?php echo htmlspecialchars($a['employee_name']); ?></td>
-                    <td><?php echo htmlspecialchars($a['available_date']); ?></td>
-                    <td><?php echo htmlspecialchars(substr($a['start_time'], 0, 5)); ?></td>
-                    <td><?php echo htmlspecialchars(substr($a['end_time'], 0, 5)); ?></td>
-                    <td><?php echo htmlspecialchars($a['note'] ?? ''); ?></td>
-                </tr>
-                <?php endforeach; ?>
-            <?php endif; ?>
-        </tbody>
-    </table>
-</div>
+    const openManagerModal = function (detailId, title) {
+        const detail = document.getElementById(detailId);
+        modal.querySelector('[data-manager-modal-title]').textContent = title || '詳細';
+        modal.querySelector('[data-manager-modal-body]').innerHTML = detail ? detail.innerHTML : '';
+        modal.hidden = false;
+        document.body.classList.add('calendar-modal-open');
+    };
+
+    if (event.target.closest('[data-manager-modal-close]')) {
+        modal.hidden = true;
+        document.body.classList.remove('calendar-modal-open');
+        return;
+    }
+
+    const button = event.target.closest('[data-manager-detail]');
+    if (button) {
+        openManagerModal(button.dataset.managerDetail, button.dataset.managerTitle || '詳細');
+        return;
+    }
+
+    if (event.target.closest('a, button, input, select, textarea, form, label')) {
+        return;
+    }
+
+    const card = event.target.closest('[data-manager-card-detail]');
+    if (card) {
+        openManagerModal(card.dataset.managerCardDetail, card.dataset.managerCardTitle || '詳細');
+    }
+});
+
+document.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+    }
+
+    const card = event.target.closest('[data-manager-card-detail]');
+    if (!card || event.target.closest('a, button, input, select, textarea, form, label')) {
+        return;
+    }
+
+    event.preventDefault();
+    const modal = document.querySelector('[data-manager-modal]');
+    if (!modal) {
+        return;
+    }
+
+    const detail = document.getElementById(card.dataset.managerCardDetail);
+    modal.querySelector('[data-manager-modal-title]').textContent = card.dataset.managerCardTitle || '詳細';
+    modal.querySelector('[data-manager-modal-body]').innerHTML = detail ? detail.innerHTML : '';
+    modal.hidden = false;
+    document.body.classList.add('calendar-modal-open');
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.querySelector('[data-manager-modal]');
+    const initialDetailId = <?php echo json_encode($initialManagerModalDetail, JSON_UNESCAPED_UNICODE); ?>;
+    const initialTitle = <?php echo json_encode($initialManagerModalTitle, JSON_UNESCAPED_UNICODE); ?>;
+
+    if (!modal || !initialDetailId) {
+        return;
+    }
+
+    const detail = document.getElementById(initialDetailId);
+    modal.querySelector('[data-manager-modal-title]').textContent = initialTitle || '詳細';
+    modal.querySelector('[data-manager-modal-body]').innerHTML = detail ? detail.innerHTML : '';
+    modal.hidden = false;
+    document.body.classList.add('calendar-modal-open');
+});
+</script>
 <?php endif; ?>
 
 <?php require_once __DIR__ . '/../../app/includes/footer.php'; ?>

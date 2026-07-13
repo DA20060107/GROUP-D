@@ -52,7 +52,7 @@ function leaveRequestStatusBadgeClass(?string $status): string
 
 // ------------------------------------------------------------
 // substitute_candidates.status
-//   proposed : 未回答
+//   proposed : 未回答（未通知の候補は、notified_at を見て画面側で分岐する）
 //   accepted : 代勤可能
 //   declined : 代勤不可
 //   expired  : 無効
@@ -91,6 +91,7 @@ function shiftStatusLabel(?string $status): string
     $labels = [
         'scheduled'       => '予定',
         'leave_requested' => '休み申請中',
+        'leave_approved'  => '休み承認済み',
         'substituted'     => '代勤反映済み',
         'cancelled'       => 'キャンセル',
         'replacement_pending' => '代勤者再調整中',
@@ -103,6 +104,7 @@ function shiftStatusBadgeClass(?string $status): string
     $classes = [
         'scheduled'       => 'badge-active',
         'leave_requested' => 'badge-warning',
+        'leave_approved'  => 'badge-success',
         'substituted'     => 'badge-success',
         'cancelled'       => 'badge-inactive',
         'replacement_pending' => 'badge-warning',

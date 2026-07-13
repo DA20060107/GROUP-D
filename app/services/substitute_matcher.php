@@ -19,8 +19,8 @@
  *   相対的な指標である。
  *
  * 【スコア計算の範囲】
- *   スコア計算・抽出理由の保存・表示までを実装している。
- *   スコア上位3人だけへの通知、全員拒否時の次グループ通知などは未実装。
+ *   スコア計算・抽出理由の保存・表示に加え、スコア上位3人への段階通知を実装している。
+ *   通知済み候補者が辞退した場合は、空いた通知枠に次点候補を追加通知する。
  *
  * 【代勤候補の再抽出】
  *   一度抽出した候補が確保できなくなった場合（代勤者キャンセル承認時の自動再抽出、
@@ -61,6 +61,12 @@ function getLeaveRequestShift(PDO $pdo, int $leaveRequestId)
 function getMatchingModes(): array
 {
     return ['normal', 'staffing_priority', 'skill_priority'];
+}
+
+/** 代勤依頼を同時に通知する上限人数 */
+function getCandidateNotificationLimit(): int
+{
+    return 3;
 }
 
 /**
@@ -109,9 +115,9 @@ function getMatchingModeLabel(string $mode): string
 function getMatchingModeDescription(string $mode): string
 {
     $descriptions = [
-        'normal'            => '通常時は、勤務可能であることに加え、ポジション・スキル・勤続年数・時間一致度をバランスよく評価します。',
-        'staffing_priority' => '人員不足時は、ポジションやスキルよりも、対象時間に出勤できることを重視します。',
-        'skill_priority'    => '業務品質を保ちたい場合は、対象業務に対応できるスキルや経験を持つ従業員を優先します。',
+        'normal'            => '勤務可能であることに加え、ポジション・スキル・勤続年数・時間一致度をバランスよく評価します。',
+        'staffing_priority' => 'ポジションやスキルよりも、対象時間に出勤できることを重視します。',
+        'skill_priority'    => '対象業務に対応できるスキルや経験を持つ従業員を優先します。',
     ];
     return $descriptions[$mode] ?? '';
 }
@@ -388,45 +394,134 @@ function createSubstituteCandidates(PDO $pdo, int $leaveRequestId, string $mode)
  * 同一の休み申請・候補者に対して既に通知が作成済みの場合は、
  * 重複して作成しない。
  */
-function createCandidateNotifications(PDO $pdo, int $leaveRequestId, array $candidates): void
+function createCandidateNotifications(
+    PDO $pdo,
+    int $leaveRequestId,
+    array $candidates,
+    bool $allowDuplicate = false,
+    ?string $customTitle = null,
+    ?string $customMessage = null
+): int
 {
     if (empty($candidates)) {
-        return;
+        return 0;
     }
 
     $target = getLeaveRequestShift($pdo, $leaveRequestId);
     if ($target === null) {
-        return;
+        return 0;
     }
 
-    $message = sprintf(
+    $title = $customTitle ?? '代勤依頼が届いています';
+    $message = $customMessage ?? sprintf(
         '%sの%s〜%sのシフトについて、代勤可能か回答してください。',
         $target['shift_date'],
         substr($target['start_time'], 0, 5),
         substr($target['end_time'], 0, 5)
     );
 
-    $stmt = $pdo->prepare(
-        "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
-         SELECT u.id, 'substitute_request', '代勤依頼が届いています', :message, 0, :leave_request_id
-         FROM users u
-         WHERE u.role = 'employee' AND u.employee_id = :employee_id
-           AND NOT EXISTS (
-               SELECT 1 FROM notifications n
-               WHERE n.user_id = u.id
-                 AND n.type = 'substitute_request'
-                 AND n.related_leave_request_id = :leave_request_id2
-           )"
-    );
+    if ($allowDuplicate) {
+        $stmt = $pdo->prepare(
+            "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+             SELECT u.id, 'substitute_request', :title, :message, 0, :leave_request_id
+             FROM users u
+             WHERE u.role = 'employee' AND u.employee_id = :employee_id"
+        );
+    } else {
+        $stmt = $pdo->prepare(
+            "INSERT INTO notifications (user_id, type, title, message, is_read, related_leave_request_id)
+             SELECT u.id, 'substitute_request', :title, :message, 0, :leave_request_id
+             FROM users u
+             WHERE u.role = 'employee' AND u.employee_id = :employee_id
+               AND NOT EXISTS (
+                   SELECT 1 FROM notifications n
+                   WHERE n.user_id = u.id
+                     AND n.type = 'substitute_request'
+                     AND n.related_leave_request_id = :leave_request_id2
+               )"
+        );
+    }
+
+    $createdCount = 0;
 
     foreach ($candidates as $candidate) {
-        $stmt->execute([
+        $params = [
+            'title'             => $title,
             'message'           => $message,
             'leave_request_id'  => $leaveRequestId,
             'employee_id'       => $candidate['employee_id'],
-            'leave_request_id2' => $leaveRequestId,
+        ];
+        if (!$allowDuplicate) {
+            $params['leave_request_id2'] = $leaveRequestId;
+        }
+
+        $stmt->execute($params);
+        $createdCount += (int) $stmt->rowCount();
+
+        // 通知そのものはユーザー操作で削除される可能性があるため、
+        // 実際に通知レコードが存在する候補だけ、候補側にも「通知済み」として扱う日時を残す。
+        $pdo->prepare(
+            "UPDATE substitute_candidates sc
+             JOIN users u
+               ON u.role = 'employee'
+              AND u.employee_id = sc.candidate_employee_id
+             JOIN notifications n
+               ON n.user_id = u.id
+              AND n.type = 'substitute_request'
+              AND n.related_leave_request_id = sc.leave_request_id
+             SET sc.notified_at = COALESCE(sc.notified_at, NOW())
+             WHERE sc.leave_request_id = :leave_request_id
+               AND sc.candidate_employee_id = :employee_id"
+        )->execute([
+            'leave_request_id' => $leaveRequestId,
+            'employee_id'      => $candidate['employee_id'],
         ]);
     }
+
+    return $createdCount;
+}
+
+/**
+ * スコア順に、未通知の代勤候補へ上限人数まで段階的に通知する
+ *
+ * 例：上限3人で、通知済みの未回答候補が2人いる場合は、次点候補1人だけへ通知する。
+ */
+function notifyNextSubstituteCandidates(PDO $pdo, int $leaveRequestId, ?int $limit = null): int
+{
+    $limit = $limit ?? getCandidateNotificationLimit();
+    if ($limit <= 0) {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*)
+         FROM substitute_candidates
+         WHERE leave_request_id = :leave_request_id
+           AND status IN ('proposed', 'accepted')
+           AND notified_at IS NOT NULL"
+    );
+    $stmt->execute(['leave_request_id' => $leaveRequestId]);
+    $activeNotifiedCount = (int) $stmt->fetchColumn();
+    $availableSlots = max(0, $limit - $activeNotifiedCount);
+
+    if ($availableSlots === 0) {
+        return 0;
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT candidate_employee_id AS employee_id
+         FROM substitute_candidates
+         WHERE leave_request_id = :leave_request_id
+           AND status = 'proposed'
+           AND notified_at IS NULL
+         ORDER BY match_score DESC, id ASC
+         LIMIT :limit"
+    );
+    $stmt->bindValue(':leave_request_id', $leaveRequestId, PDO::PARAM_INT);
+    $stmt->bindValue(':limit', $availableSlots, PDO::PARAM_INT);
+    $stmt->execute();
+
+    return createCandidateNotifications($pdo, $leaveRequestId, $stmt->fetchAll());
 }
 
 /**
@@ -521,7 +616,7 @@ function createCandidateAvailableNotification(PDO $pdo, int $candidateId): void
 /**
  * 休み申請に対する代勤候補抽出・通知作成・状態更新をまとめて行う
  *
- * 呼び出し元（pages/employee/leave_request.php）で、休み申請の登録と
+ * 呼び出し元（pages/employee/shifts.php の休み申請登録処理）で、休み申請の登録と
  * 合わせてトランザクション内から呼び出すことを想定している。
  *
  * 現在の抽出モード（matching_settings）を取得し、休み申請にその時点の
@@ -539,7 +634,7 @@ function processSubstituteMatching(PDO $pdo, int $leaveRequestId): string
     $candidates = createSubstituteCandidates($pdo, $leaveRequestId, $mode);
 
     if (!empty($candidates)) {
-        createCandidateNotifications($pdo, $leaveRequestId, $candidates);
+        notifyNextSubstituteCandidates($pdo, $leaveRequestId);
         $newStatus = 'matching';
     } else {
         createNoCandidateNotification($pdo, $leaveRequestId);
@@ -608,12 +703,12 @@ function getApprovedSubstituteCancellationEmployeeIdsForLeaveRequest(PDO $pdo, i
 /**
  * 指定した休み申請・従業員の既存の代勤候補レコード（最新1件）を返す
  *
- * @return array|null id, status を含む連想配列。存在しない場合は null。
+ * @return array|null id, status, notified_at を含む連想配列。存在しない場合は null。
  */
 function getExistingCandidateStatus(PDO $pdo, int $leaveRequestId, int $employeeId): ?array
 {
     $stmt = $pdo->prepare(
-        'SELECT id, status
+        'SELECT id, status, notified_at
          FROM substitute_candidates
          WHERE leave_request_id = :leave_request_id AND candidate_employee_id = :employee_id
          ORDER BY id DESC
@@ -770,6 +865,46 @@ function createRematchNoCandidateNotification(PDO $pdo, int $leaveRequestId): vo
 }
 
 /**
+ * 代勤者キャンセルにより再調整になった際、過去に通知済み・未回答だった候補者へ再通知する。
+ *
+ * 通常の代勤依頼通知は重複作成しないが、承認後キャンセルで空きシフトが復活した場合は、
+ * 既存通知だけでは従業員が気づけないため、このケースに限って同じ type の通知を再作成する。
+ */
+function createReopenedSubstituteRequestNotifications(PDO $pdo, int $leaveRequestId, array $candidateEmployeeIds): int
+{
+    $candidateEmployeeIds = array_values(array_unique(array_map('intval', $candidateEmployeeIds)));
+    if (empty($candidateEmployeeIds)) {
+        return 0;
+    }
+
+    $target = getLeaveRequestShift($pdo, $leaveRequestId);
+    if ($target === null) {
+        return 0;
+    }
+
+    $message = sprintf(
+        '%sの%s〜%sのシフトについて、承認済みだった代勤者がキャンセルされたため、代勤依頼を再送しました。代勤可能か回答してください。',
+        $target['shift_date'],
+        substr($target['start_time'], 0, 5),
+        substr($target['end_time'], 0, 5)
+    );
+
+    $candidates = array_map(
+        static fn (int $employeeId): array => ['employee_id' => $employeeId],
+        $candidateEmployeeIds
+    );
+
+    return createCandidateNotifications(
+        $pdo,
+        $leaveRequestId,
+        $candidates,
+        true,
+        '代勤依頼が再度届いています',
+        $message
+    );
+}
+
+/**
  * 代勤候補を再抽出する（既存の抽出条件・スコア計算を再利用）
  *
  * - 休み申請の matching_mode を使ってスコア・抽出理由を計算する
@@ -777,7 +912,7 @@ function createRematchNoCandidateNotification(PDO $pdo, int $leaveRequestId): vo
  * - 既存 expired レコードは proposed へ再活性化、未登録は新規作成する
  * - proposed/accepted の既存候補はそのまま維持する
  * - 新たに proposed になった（created/reactivated）候補者へ代勤依頼通知を作成する
- *   （createCandidateNotifications の重複ガードにより、同じ候補者への二重通知は作成されない）
+ * - 代勤者キャンセルによる再調整時は、過去に通知済み・未回答だった候補者にも再通知する
  * - 有効な候補が1人もいなければ、店長へ再抽出候補者なし通知を作成する
  *
  * この関数は内部でトランザクションを開始しない（呼び出し側で囲むこと）。
@@ -815,13 +950,14 @@ function retrySubstituteMatching(PDO $pdo, int $leaveRequestId, array $excludeEm
 
     $candidates = findSubstituteCandidatesForRetry($pdo, $leaveRequestId, $excludeIds);
 
-    $toNotify     = [];
     $matchedCount = 0;
+    $reopenedNotificationEmployeeIds = [];
 
     foreach ($candidates as $candidate) {
         $employeeId   = (int) $candidate['employee_id'];
         $extraSeconds = getTightestAvailabilityExtraSeconds($pdo, $employeeId, $target);
         $scoreResult  = calculateCandidateScore($candidate, $target, $extraSeconds, $mode);
+        $existingBefore = getExistingCandidateStatus($pdo, $leaveRequestId, $employeeId);
 
         $outcome = createOrReactivateCandidate(
             $pdo,
@@ -831,18 +967,30 @@ function retrySubstituteMatching(PDO $pdo, int $leaveRequestId, array $excludeEm
             $scoreResult['reason']
         );
 
-        if (in_array($outcome, ['created', 'reactivated'], true)) {
-            $toNotify[] = ['employee_id' => $employeeId];
-            $matchedCount++;
-        } elseif (in_array($outcome, ['proposed', 'accepted'], true)) {
+        if (
+            $trigger === 'substitute_cancel'
+            && $outcome === 'reactivated'
+            && $existingBefore !== null
+            && $existingBefore['notified_at'] !== null
+        ) {
+            $reopenedNotificationEmployeeIds[] = $employeeId;
+        }
+
+        if (in_array($outcome, ['created', 'reactivated', 'proposed', 'accepted'], true)) {
             // 既に依頼中・回答済みの候補者も「有効な候補がいる」状態として数える
             $matchedCount++;
         }
     }
 
-    if (!empty($toNotify)) {
-        createCandidateNotifications($pdo, $leaveRequestId, $toNotify);
+    $notifiedCount = 0;
+    if ($trigger === 'substitute_cancel') {
+        $notifiedCount += createReopenedSubstituteRequestNotifications(
+            $pdo,
+            $leaveRequestId,
+            $reopenedNotificationEmployeeIds
+        );
     }
+    $notifiedCount += notifyNextSubstituteCandidates($pdo, $leaveRequestId);
 
     $noCandidate = ($matchedCount === 0);
     if ($noCandidate) {
@@ -851,7 +999,7 @@ function retrySubstituteMatching(PDO $pdo, int $leaveRequestId, array $excludeEm
 
     return [
         'matched_count'         => $matchedCount,
-        'notified_count'        => count($toNotify),
+        'notified_count'        => $notifiedCount,
         'excluded_employee_ids' => $excludeIds,
         'no_candidate'          => $noCandidate,
     ];

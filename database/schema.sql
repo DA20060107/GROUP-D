@@ -55,18 +55,23 @@ CREATE TABLE IF NOT EXISTS users (
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS shifts (
     id          INT AUTO_INCREMENT PRIMARY KEY,
-    employee_id INT NOT NULL COMMENT '担当従業員',
+    employee_id INT NULL COMMENT '担当従業員（店長シフトの場合はNULL）',
+    manager_user_id INT NULL COMMENT '担当店長（users.id、従業員シフトの場合はNULL）',
+    related_leave_request_id INT NULL COMMENT '手動登録された代勤シフトの関連休み申請ID',
     shift_date  DATE NOT NULL COMMENT '勤務日',
     start_time  TIME NOT NULL COMMENT '開始時刻',
     end_time    TIME NOT NULL COMMENT '終了時刻',
     position    VARCHAR(50) NULL COMMENT '担当業務・ポジション',
     note        VARCHAR(255) NULL COMMENT '備考',
-    status      ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled', 'replacement_pending')
-                NOT NULL DEFAULT 'scheduled' COMMENT 'シフト状態（replacement_pending: 代勤者キャンセル承認後の再調整待ち）',
+    status      ENUM('scheduled', 'leave_requested', 'leave_approved', 'substituted', 'cancelled', 'replacement_pending')
+                NOT NULL DEFAULT 'scheduled' COMMENT 'シフト状態（leave_approved: 休み承認済み、replacement_pending: 代勤者キャンセル承認後の再調整待ち）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_shifts_employee
         FOREIGN KEY (employee_id) REFERENCES employees (id)
+        ON DELETE CASCADE ON UPDATE CASCADE,
+    CONSTRAINT fk_shifts_manager_user
+        FOREIGN KEY (manager_user_id) REFERENCES users (id)
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -127,6 +132,7 @@ CREATE TABLE IF NOT EXISTS substitute_candidates (
     match_score          INT NULL COMMENT '候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）',
     match_reason         VARCHAR(255) NULL COMMENT '候補者として抽出された理由',
     matched_at           DATETIME NULL COMMENT '候補者として抽出された日時',
+    notified_at          DATETIME NULL COMMENT '代勤依頼通知を送信した日時',
     responded_at         DATETIME NULL COMMENT '回答日時',
     created_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -148,10 +154,37 @@ CREATE TABLE IF NOT EXISTS notifications (
     title       VARCHAR(100) NOT NULL COMMENT '通知タイトル',
     message     TEXT NOT NULL COMMENT '通知内容',
     is_read     TINYINT(1) NOT NULL DEFAULT 0 COMMENT '既読フラグ',
+    is_favorite TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'お気に入り通知フラグ（1: 自動削除しない）',
     related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）',
     created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT fk_notifications_user
+        FOREIGN KEY (user_id) REFERENCES users (id)
+        ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ------------------------------------------------------------
+-- request_view_states: 申請確認画面のユーザー別表示状態
+--
+-- 申請・承認・キャンセルの実データは削除せず、画面上の
+-- 非表示・お気に入りだけを管理する。
+-- item_type + item_id は leave_requests / cancellation_requests /
+-- substitute_candidates などを指す多態的な参照のため、item_id には
+-- 外部キーを付けない。
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS request_view_states (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT NOT NULL COMMENT '表示状態を持つユーザー',
+    item_type   VARCHAR(50) NOT NULL COMMENT '表示項目種別',
+    item_id     INT NOT NULL COMMENT '表示項目ID',
+    is_hidden   TINYINT(1) NOT NULL DEFAULT 0 COMMENT '非表示フラグ',
+    is_favorite TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'お気に入りフラグ',
+    hidden_at   DATETIME NULL COMMENT '非表示にした日時',
+    created_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_request_view_state (user_id, item_type, item_id),
+    KEY idx_request_view_user_hidden (user_id, is_hidden, is_favorite),
+    CONSTRAINT fk_request_view_states_user
         FOREIGN KEY (user_id) REFERENCES users (id)
         ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -244,6 +277,8 @@ ALTER TABLE availability
     ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER end_time;
 
 ALTER TABLE shifts
+    MODIFY COLUMN employee_id INT NULL COMMENT '担当従業員（店長シフトの場合はNULL）',
+    ADD COLUMN IF NOT EXISTS manager_user_id INT NULL COMMENT '担当店長（users.id、従業員シフトの場合はNULL）' AFTER employee_id,
     ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当業務・ポジション' AFTER end_time,
     ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position;
 
@@ -253,10 +288,14 @@ ALTER TABLE shifts
 ALTER TABLE substitute_candidates
     ADD COLUMN IF NOT EXISTS match_score INT NULL COMMENT '候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）' AFTER status,
     ADD COLUMN IF NOT EXISTS match_reason VARCHAR(255) NULL COMMENT '候補者として抽出された理由' AFTER match_score,
-    ADD COLUMN IF NOT EXISTS matched_at DATETIME NULL COMMENT '候補者として抽出された日時' AFTER match_reason;
+    ADD COLUMN IF NOT EXISTS matched_at DATETIME NULL COMMENT '候補者として抽出された日時' AFTER match_reason,
+    ADD COLUMN IF NOT EXISTS notified_at DATETIME NULL COMMENT '代勤依頼通知を送信した日時' AFTER matched_at;
 
 ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
+
+ALTER TABLE notifications
+    ADD COLUMN IF NOT EXISTS is_favorite TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'お気に入り通知フラグ（1: 自動削除しない）' AFTER is_read;
 
 ALTER TABLE leave_requests
     MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval', 'replacement_pending')
@@ -267,9 +306,12 @@ ALTER TABLE leave_requests
 -- 代勤者による承認後キャンセル機能のための状態追加（マイグレーション）
 -- ------------------------------------------------------------
 ALTER TABLE shifts
-    MODIFY COLUMN status ENUM('scheduled', 'leave_requested', 'substituted', 'cancelled', 'replacement_pending')
+    ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '手動登録された代勤シフトの関連休み申請ID' AFTER manager_user_id;
+
+ALTER TABLE shifts
+    MODIFY COLUMN status ENUM('scheduled', 'leave_requested', 'leave_approved', 'substituted', 'cancelled', 'replacement_pending')
         NOT NULL DEFAULT 'scheduled'
-        COMMENT 'シフト状態（replacement_pending: 代勤者キャンセル承認後の再調整待ち）';
+        COMMENT 'シフト状態（leave_approved: 休み承認済み、replacement_pending: 代勤者キャンセル承認後の再調整待ち）';
 
 -- ------------------------------------------------------------
 -- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）
