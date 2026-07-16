@@ -27,11 +27,6 @@ require_once __DIR__ . '/../app/includes/header.php';
 
     <h1 class="landing-title">シフト代勤マッチング<wbr>支援システム</h1>
 
-    <p class="landing-tagline">
-        休みたい人と、代われる人を、かんたんマッチング。<br>
-        従業員同士の連絡負担と、店長のシフト調整負担を軽減します。
-    </p>
-
     <a class="btn btn-landing" href="login.php">ログインしてはじめる</a>
 </section>
 
