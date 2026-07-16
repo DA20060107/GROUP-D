@@ -22,6 +22,7 @@ require_once __DIR__ . '/../../app/includes/auth.php';
 requireRole('manager');
 require_once __DIR__ . '/../../app/config/database.php';
 require_once __DIR__ . '/../../app/includes/status_labels.php';
+require_once __DIR__ . '/../../app/includes/position_helpers.php';
 
 $pageTitle = '従業員情報管理';
 $basePath  = '../../public/';
@@ -106,6 +107,7 @@ $newEmployeeForm = [
     'hire_date'   => '',
     'skill_level' => '3',
 ];
+$positionCheckboxOptions = positionPresetOptions();
 
 // ------------------------------------------------------------
 // POST処理
@@ -119,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $password    = (string) ($_POST['password'] ?? '');
         $email       = trim($_POST['email'] ?? '');
         $phone       = trim($_POST['phone'] ?? '');
-        $position    = trim($_POST['position'] ?? '');
+        $position    = buildPositionValue($_POST['position_options'] ?? [], '');
         $note        = trim($_POST['note'] ?? '');
         $hireDate    = trim($_POST['hire_date'] ?? '');
         $skillLevel  = trim($_POST['skill_level'] ?? '3');
@@ -201,7 +203,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email      = trim($_POST['email'] ?? '');
         $phone      = trim($_POST['phone'] ?? '');
         $hireDate   = trim($_POST['hire_date'] ?? '');
-        $position   = trim($_POST['position'] ?? '');
+        $position   = buildPositionValue($_POST['position_options'] ?? [], '');
         $note       = trim($_POST['note'] ?? '');
         $skillLevel = trim($_POST['skill_level'] ?? '3');
 
@@ -472,7 +474,15 @@ function ef($editEmployee, $key)
         </div>
         <div class="form-group">
             <label for="edit_position">担当可能業務・ポジション</label>
-            <input type="text" id="edit_position" name="position" value="<?php echo ef($editEmployee, 'position'); ?>" placeholder="例: ホール, キッチン">
+            <?php $editPositionItems = parsePositionItems($editEmployee['position'] ?? ''); ?>
+            <div class="position-checkbox-group">
+                <?php foreach ($positionCheckboxOptions as $positionOption): ?>
+                <label class="position-checkbox-item">
+                    <input type="checkbox" name="position_options[]" value="<?php echo htmlspecialchars($positionOption); ?>" <?php echo in_array($positionOption, $editPositionItems, true) ? 'checked' : ''; ?>>
+                    <span><?php echo htmlspecialchars($positionOption); ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
         </div>
         <div class="form-group">
             <label for="edit_skill_level">スキルレベル</label>
@@ -608,7 +618,15 @@ function ef($editEmployee, $key)
         </div>
         <div class="form-group">
             <label for="new_position">担当可能業務・ポジション</label>
-            <input type="text" id="new_position" name="position" placeholder="例: ホール, キッチン" value="<?php echo htmlspecialchars($newEmployeeForm['position']); ?>">
+            <?php $newPositionItems = parsePositionItems($newEmployeeForm['position']); ?>
+            <div class="position-checkbox-group">
+                <?php foreach ($positionCheckboxOptions as $positionOption): ?>
+                <label class="position-checkbox-item">
+                    <input type="checkbox" name="position_options[]" value="<?php echo htmlspecialchars($positionOption); ?>" <?php echo in_array($positionOption, $newPositionItems, true) ? 'checked' : ''; ?>>
+                    <span><?php echo htmlspecialchars($positionOption); ?></span>
+                </label>
+                <?php endforeach; ?>
+            </div>
         </div>
         <div class="form-group">
             <label for="new_hire_date">入社日</label>

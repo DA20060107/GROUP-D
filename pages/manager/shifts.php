@@ -33,6 +33,7 @@ $newShiftForm = [
     'position'    => '',
     'note'        => '',
 ];
+$positionCheckboxOptions = positionPresetOptions();
 
 /**
  * 店長シフト登録に必要なカラムを既存DBへ補う。
@@ -84,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $shiftDate  = trim($_POST['shift_date'] ?? '');
         $startTime  = trim($_POST['start_time'] ?? '');
         $endTime    = trim($_POST['end_time'] ?? '');
-        $position   = trim($_POST['position'] ?? '');
+        $position   = buildPositionValue($_POST['position_options'] ?? [], '');
         $note       = trim($_POST['note'] ?? '');
 
         $newShiftForm = [
@@ -641,7 +642,15 @@ ob_start();
                 </div>
                 <div class="form-group">
                     <label for="shift_position">担当業務・ポジション</label>
-                    <input type="text" id="shift_position" name="position" placeholder="例：ホール、キッチン" value="<?php echo htmlspecialchars($newShiftForm['position']); ?>">
+                    <?php $shiftPositionItems = parsePositionItems($newShiftForm['position']); ?>
+                    <div class="position-checkbox-group">
+                        <?php foreach ($positionCheckboxOptions as $positionOption): ?>
+                        <label class="position-checkbox-item">
+                            <input type="checkbox" name="position_options[]" value="<?php echo htmlspecialchars($positionOption); ?>" <?php echo in_array($positionOption, $shiftPositionItems, true) ? 'checked' : ''; ?>>
+                            <span><?php echo htmlspecialchars($positionOption); ?></span>
+                        </label>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="shift_note">備考</label>

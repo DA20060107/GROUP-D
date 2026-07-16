@@ -36,6 +36,8 @@
  *                     shift_date, start_time, end_time, position を含む連想配列。
  *                     対象の休み申請が存在しない場合は null。
  */
+require_once __DIR__ . '/../includes/position_helpers.php';
+
 function getLeaveRequestShift(PDO $pdo, int $leaveRequestId)
 {
     $stmt = $pdo->prepare(
@@ -116,7 +118,7 @@ function getMatchingModeDescription(string $mode): string
 {
     $descriptions = [
         'normal'            => '勤務可能であることに加え、ポジション・スキル・勤続年数・時間一致度をバランスよく評価します。',
-        'staffing_priority' => 'ポジションやスキルよりも、対象時間に出勤できることを重視します。',
+        'staffing_priority' => '一部の時間だけ勤務可能な従業員も候補に含め、人員確保の可能性を広げます。',
         'skill_priority'    => '対象業務に対応できるスキルや経験を持つ従業員を優先します。',
     ];
     return $descriptions[$mode] ?? '';
@@ -129,9 +131,9 @@ function getMatchingModeDescription(string $mode): string
 function getMatchingWeights(string $mode): array
 {
     $weights = [
-        'normal'            => ['position' => 30, 'skill' => 30, 'tenure' => 20, 'time' => 20],
-        'staffing_priority' => ['position' => 10, 'skill' => 10, 'tenure' => 10, 'time' => 70],
-        'skill_priority'    => ['position' => 30, 'skill' => 50, 'tenure' => 15, 'time' => 5],
+        'normal'            => ['position' => 40, 'skill' => 35, 'tenure' => 25, 'time' => 0],
+        'staffing_priority' => ['position' => 25, 'skill' => 15, 'tenure' => 10, 'time' => 50],
+        'skill_priority'    => ['position' => 35, 'skill' => 50, 'tenure' => 15, 'time' => 0],
     ];
     return $weights[$mode] ?? $weights['normal'];
 }
@@ -143,18 +145,18 @@ function getMatchingWeights(string $mode): array
 /** ポジション一致度のスコア（0〜100）とラベルを算出する */
 function scorePositionMatch(?string $candidatePosition, ?string $shiftPosition): array
 {
-    $candidatePosition = trim((string) $candidatePosition);
-    $shiftPosition      = trim((string) $shiftPosition);
+    $candidateItems = parsePositionItems($candidatePosition);
+    $requiredItems  = parsePositionItems($shiftPosition);
 
-    if ($candidatePosition === '' || $shiftPosition === '') {
+    if (empty($candidateItems) || empty($requiredItems)) {
         return ['score' => 50, 'label' => 'ポジション情報なし'];
     }
-    if ($candidatePosition === $shiftPosition) {
-        return ['score' => 100, 'label' => 'ポジション一致'];
+    if (positionCandidateCoversAll($candidateItems, $requiredItems)) {
+        return ['score' => 100, 'label' => '必要ポジション対応可'];
     }
-    // 「ホール・レジ」のように複数業務をまとめて持つデータがあるため、部分一致は中間評価とする
-    if (mb_strpos($candidatePosition, $shiftPosition) !== false || mb_strpos($shiftPosition, $candidatePosition) !== false) {
-        return ['score' => 70, 'label' => 'ポジション部分一致'];
+    // 候補者側が必要業務をすべて含む場合は満点、一部だけ対応できる場合は中間評価とする
+    if (positionHasPartialOverlap($candidateItems, $requiredItems)) {
+        return ['score' => 70, 'label' => 'ポジション一部対応'];
     }
     return ['score' => 0, 'label' => 'ポジション不一致'];
 }
@@ -188,52 +190,94 @@ function scoreTenure(?string $hireDate, string $referenceDate): array
     return ['score' => 20, 'label' => '勤続3か月未満'];
 }
 
-/** 時間一致度のスコアとラベルを算出する（$extraSeconds: 勤務可能時間がシフト時間を上回る秒数。不明な場合は null） */
-function scoreTimeMatch(?int $extraSeconds): array
+/** 時刻（HH:MM[:SS]）を秒へ変換する */
+function timeToSecondsValue(?string $time): int
 {
-    if ($extraSeconds === null) {
-        return ['score' => 70, 'label' => '勤務可能時間が対象シフトをカバー'];
-    }
-    if ($extraSeconds <= 0) {
-        return ['score' => 100, 'label' => '勤務可能時間が対象シフトとほぼ一致'];
-    }
-    if ($extraSeconds <= 3600) {
-        return ['score' => 85, 'label' => '勤務可能時間が対象シフトに近い'];
-    }
-    if ($extraSeconds <= 10800) {
-        return ['score' => 60, 'label' => '勤務可能時間が対象シフトより広め'];
-    }
-    return ['score' => 40, 'label' => '勤務可能時間が対象シフトより大幅に広い'];
+    $parts = array_map('intval', explode(':', (string) $time));
+    $hour = $parts[0] ?? 0;
+    $minute = $parts[1] ?? 0;
+    $second = $parts[2] ?? 0;
+
+    return $hour * 3600 + $minute * 60 + $second;
 }
 
-/**
- * 対象シフトをカバーする勤務可能時間のうち、最も近い（無駄が少ない）ものとの差（秒）を取得する
- * 該当する勤務可能日登録が見つからない場合は null を返す
- */
-function getTightestAvailabilityExtraSeconds(PDO $pdo, int $employeeId, array $shift): ?int
+/** 勤務可能時間が対象シフトをどれだけカバーしているかを算出する */
+function getBestAvailabilityCoverage(PDO $pdo, int $employeeId, array $shift, bool $allowPartialCoverage): ?array
 {
+    $timeCondition = $allowPartialCoverage
+        ? 'start_time < :end_time AND end_time > :start_time'
+        : 'start_time <= :start_time AND end_time >= :end_time';
+
     $stmt = $pdo->prepare(
-        'SELECT MIN(
-                (TIME_TO_SEC(end_time) - TIME_TO_SEC(start_time))
-                - (TIME_TO_SEC(:shift_end) - TIME_TO_SEC(:shift_start))
-            ) AS extra_seconds
+        "SELECT start_time, end_time
          FROM availability
          WHERE employee_id = :employee_id
            AND available_date = :shift_date
-           AND start_time <= :start_time
-           AND end_time >= :end_time'
+           AND {$timeCondition}"
     );
     $stmt->execute([
-        'shift_end'   => $shift['end_time'],
-        'shift_start' => $shift['start_time'],
         'employee_id' => $employeeId,
         'shift_date'  => $shift['shift_date'],
         'start_time'  => $shift['start_time'],
         'end_time'    => $shift['end_time'],
     ]);
-    $value = $stmt->fetchColumn();
 
-    return ($value !== false && $value !== null) ? (int) $value : null;
+    $shiftStart = timeToSecondsValue($shift['start_time'] ?? null);
+    $shiftEnd   = timeToSecondsValue($shift['end_time'] ?? null);
+    $shiftSeconds = max(0, $shiftEnd - $shiftStart);
+    if ($shiftSeconds <= 0) {
+        return null;
+    }
+
+    $bestCoverage = null;
+    foreach ($stmt->fetchAll() as $availability) {
+        $availableStart = timeToSecondsValue($availability['start_time'] ?? null);
+        $availableEnd   = timeToSecondsValue($availability['end_time'] ?? null);
+        $coveredSeconds = max(0, min($availableEnd, $shiftEnd) - max($availableStart, $shiftStart));
+        $extraSeconds = max(0, ($availableEnd - $availableStart) - $shiftSeconds);
+
+        $coverage = [
+            'covered_seconds' => $coveredSeconds,
+            'shift_seconds'   => $shiftSeconds,
+            'extra_seconds'   => $extraSeconds,
+            'fully_covers'    => $availableStart <= $shiftStart && $availableEnd >= $shiftEnd,
+        ];
+
+        if (
+            $bestCoverage === null
+            || $coverage['covered_seconds'] > $bestCoverage['covered_seconds']
+            || (
+                $coverage['covered_seconds'] === $bestCoverage['covered_seconds']
+                && $coverage['extra_seconds'] < $bestCoverage['extra_seconds']
+            )
+        ) {
+            $bestCoverage = $coverage;
+        }
+    }
+
+    return $bestCoverage;
+}
+
+/** 時間条件のスコアとラベルを算出する */
+function scoreTimeMatch(?array $coverage, string $mode): array
+{
+    if ($coverage === null || ($coverage['shift_seconds'] ?? 0) <= 0) {
+        return ['score' => 0, 'label' => '勤務可能時間情報なし'];
+    }
+
+    if (!empty($coverage['fully_covers'])) {
+        return ['score' => 100, 'label' => '勤務可能時間が対象シフトを全てカバー'];
+    }
+
+    $ratio = max(0, min(1, $coverage['covered_seconds'] / $coverage['shift_seconds']));
+    $score = (int) round($ratio * 100);
+    $percent = (int) round($ratio * 100);
+
+    if ($mode === 'staffing_priority') {
+        return ['score' => $score, 'label' => "勤務可能時間が対象シフトの{$percent}%をカバー（一部時間のみ）"];
+    }
+
+    return ['score' => 0, 'label' => '勤務可能時間が対象シフトを全てカバーしていない'];
 }
 
 /**
@@ -244,7 +288,7 @@ function getTightestAvailabilityExtraSeconds(PDO $pdo, int $employeeId, array $s
  *
  * @return array score(int), reason(string), details(array) を含む連想配列
  */
-function calculateCandidateScore(array $candidate, array $shift, ?int $availabilityExtraSeconds, string $mode): array
+function calculateCandidateScore(array $candidate, array $shift, ?array $availabilityCoverage, string $mode): array
 {
     $weights = getMatchingWeights($mode);
 
@@ -252,7 +296,7 @@ function calculateCandidateScore(array $candidate, array $shift, ?int $availabil
         'position' => scorePositionMatch($candidate['position'] ?? null, $shift['position'] ?? null),
         'skill'    => scoreSkillLevel((int) ($candidate['skill_level'] ?? 3)),
         'tenure'   => scoreTenure($candidate['hire_date'] ?? null, $shift['shift_date']),
-        'time'     => scoreTimeMatch($availabilityExtraSeconds),
+        'time'     => scoreTimeMatch($availabilityCoverage, $mode),
     ];
 
     $total = (
@@ -290,27 +334,30 @@ function buildMatchReason(array $scoreDetails, string $mode): string
  *
  * @return array 候補従業員の配列（employee_id, name, position, skill_level, hire_date を含む連想配列）
  */
-function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
+function findSubstituteCandidates(PDO $pdo, int $leaveRequestId, string $mode = 'normal'): array
 {
     $target = getLeaveRequestShift($pdo, $leaveRequestId);
     if ($target === null) {
         return [];
     }
 
+    $timeCondition = ($mode === 'staffing_priority')
+        ? 'AND a.start_time < :end_time AND a.end_time > :start_time'
+        : 'AND a.start_time <= :start_time AND a.end_time >= :end_time';
+
     $stmt = $pdo->prepare(
-        'SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.skill_level, e.hire_date
+        "SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.skill_level, e.hire_date
          FROM employees e
          JOIN availability a ON a.employee_id = e.id
          WHERE e.is_active = 1
            AND e.id <> :requester_employee_id
            AND a.available_date = :shift_date
-           AND a.start_time <= :start_time
-           AND a.end_time >= :end_time
+           {$timeCondition}
            AND NOT EXISTS (
                SELECT 1 FROM shifts s2
                WHERE s2.employee_id = e.id
                  AND s2.shift_date = :shift_date2
-                 AND s2.status <> "cancelled"
+                  AND s2.status <> 'cancelled'
                  AND NOT (s2.end_time <= :start_time2 OR s2.start_time >= :end_time2)
            )
            AND NOT EXISTS (
@@ -318,7 +365,7 @@ function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
                WHERE sc.leave_request_id = :leave_request_id
                  AND sc.candidate_employee_id = e.id
            )
-         ORDER BY e.id'
+         ORDER BY e.id"
     );
     $stmt->execute([
         'requester_employee_id' => $target['requester_employee_id'],
@@ -346,7 +393,7 @@ function findSubstituteCandidates(PDO $pdo, int $leaveRequestId): array
  */
 function createSubstituteCandidates(PDO $pdo, int $leaveRequestId, string $mode): array
 {
-    $candidates = findSubstituteCandidates($pdo, $leaveRequestId);
+    $candidates = findSubstituteCandidates($pdo, $leaveRequestId, $mode);
 
     if (empty($candidates)) {
         return [];
@@ -355,8 +402,13 @@ function createSubstituteCandidates(PDO $pdo, int $leaveRequestId, string $mode)
     $target = getLeaveRequestShift($pdo, $leaveRequestId);
 
     foreach ($candidates as &$candidate) {
-        $extraSeconds = getTightestAvailabilityExtraSeconds($pdo, (int) $candidate['employee_id'], $target);
-        $result       = calculateCandidateScore($candidate, $target, $extraSeconds, $mode);
+        $coverage = getBestAvailabilityCoverage(
+            $pdo,
+            (int) $candidate['employee_id'],
+            $target,
+            $mode === 'staffing_priority'
+        );
+        $result = calculateCandidateScore($candidate, $target, $coverage, $mode);
 
         $candidate['match_score']  = $result['score'];
         $candidate['match_reason'] = $result['reason'];
@@ -732,7 +784,7 @@ function getExistingCandidateStatus(PDO $pdo, int $leaveRequestId, int $employee
  *
  * @return array employee_id, name, position, skill_level, hire_date を含む配列
  */
-function findSubstituteCandidatesForRetry(PDO $pdo, int $leaveRequestId, array $excludeEmployeeIds = []): array
+function findSubstituteCandidatesForRetry(PDO $pdo, int $leaveRequestId, array $excludeEmployeeIds = [], string $mode = 'normal'): array
 {
     $target = getLeaveRequestShift($pdo, $leaveRequestId);
     if ($target === null) {
@@ -762,6 +814,10 @@ function findSubstituteCandidatesForRetry(PDO $pdo, int $leaveRequestId, array $
         $excludeSql = ' AND e.id NOT IN (' . implode(', ', $placeholders) . ')';
     }
 
+    $timeCondition = ($mode === 'staffing_priority')
+        ? 'AND a.start_time < :end_time AND a.end_time > :start_time'
+        : 'AND a.start_time <= :start_time AND a.end_time >= :end_time';
+
     $sql =
         'SELECT DISTINCT e.id AS employee_id, e.name, e.position, e.skill_level, e.hire_date
          FROM employees e
@@ -769,8 +825,7 @@ function findSubstituteCandidatesForRetry(PDO $pdo, int $leaveRequestId, array $
          WHERE e.is_active = 1
            AND e.id <> :requester_employee_id
            AND a.available_date = :shift_date
-           AND a.start_time <= :start_time
-           AND a.end_time >= :end_time
+           ' . $timeCondition . '
            AND NOT EXISTS (
                SELECT 1 FROM shifts s2
                WHERE s2.employee_id = e.id
@@ -948,15 +1003,20 @@ function retrySubstituteMatching(PDO $pdo, int $leaveRequestId, array $excludeEm
         $approvedCancelIds
     )));
 
-    $candidates = findSubstituteCandidatesForRetry($pdo, $leaveRequestId, $excludeIds);
+    $candidates = findSubstituteCandidatesForRetry($pdo, $leaveRequestId, $excludeIds, $mode);
 
     $matchedCount = 0;
     $reopenedNotificationEmployeeIds = [];
 
     foreach ($candidates as $candidate) {
         $employeeId   = (int) $candidate['employee_id'];
-        $extraSeconds = getTightestAvailabilityExtraSeconds($pdo, $employeeId, $target);
-        $scoreResult  = calculateCandidateScore($candidate, $target, $extraSeconds, $mode);
+        $coverage = getBestAvailabilityCoverage(
+            $pdo,
+            $employeeId,
+            $target,
+            $mode === 'staffing_priority'
+        );
+        $scoreResult = calculateCandidateScore($candidate, $target, $coverage, $mode);
         $existingBefore = getExistingCandidateStatus($pdo, $leaveRequestId, $employeeId);
 
         $outcome = createOrReactivateCandidate(

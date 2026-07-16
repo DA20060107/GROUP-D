@@ -151,7 +151,7 @@ body {
     font-size: 1.9em;
     line-height: 1.3;
     color: #0d47a1;
-    margin: 0 0 10px;
+    margin: 0 0 28px;
     letter-spacing: 0.02em;
 }
 
@@ -199,6 +199,7 @@ body {
     }
     .landing-title {
         font-size: 1.45em;
+        margin-bottom: 22px;
     }
     .landing-tagline {
         margin-bottom: 16px;
@@ -464,6 +465,33 @@ th {
     border: 1px solid #90caf9;
     border-radius: 4px;
     font-size: 1em;
+}
+
+.position-checkbox-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+    max-width: 520px;
+}
+
+.position-checkbox-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6px 10px;
+    border: 1px solid #bbdefb;
+    border-radius: 999px;
+    background: #f8fbff;
+    color: #0d47a1;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.position-checkbox-item input {
+    width: auto;
+    max-width: none;
+    margin: 0;
 }
 
 /* エラーメッセージ表示領域 */
