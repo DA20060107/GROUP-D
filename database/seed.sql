@@ -57,7 +57,7 @@ INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_act
     (5,  '星野蒼',   'hoshino-ao@example.com',     '090-1000-0005', '2024-01-01', 'ホール・キッチン', NULL, 1, 3),
     (6,  '坂本実南', 'sakamoto@example.com',       '090-1000-0006', '2026-06-01', 'ホール',          NULL, 1, 3),
     (7,  '飯島凛',   'iijima@example.com',         '090-1000-0007', '2026-06-01', 'ホール',          NULL, 1, 5),
-    (8,  '星野理一', 'hoshino-riichi@example.com', '090-1000-0008', '2025-04-01', 'キッチン・ドリンク', NULL, 1, 3),
+    (8,  '星野理一', 'hoshino-riichi@example.com', '090-1000-0008', '2025-04-01', 'ホール・ドリンク', NULL, 1, 3),
     (9,  '石井颯斗', 'ishii@example.com',          '090-1000-0009', '2025-05-01', 'ホール・ドリンク',   NULL, 1, 3),
     (10, '陶修斗',   'sue@example.com',            '090-1000-0010', '2025-06-01', 'キッチン・洗い場',   NULL, 1, 2),
     (11, '吉田隆人', 'yoshida@example.com',        '090-1000-0011', '2025-07-01', 'ホール・洗い場',     NULL, 1, 3),
@@ -96,7 +96,7 @@ INSERT INTO shifts (id, employee_id, manager_user_id, shift_date, start_time, en
     (6,  5,  NULL, '2026-07-19', '18:00:00', '23:00:00', 'ホール・キッチン', NULL, 'scheduled'),
     (7,  6,  NULL, '2026-07-20', '18:00:00', '22:00:00', 'ホール',       NULL, 'scheduled'),
     (8,  7,  NULL, '2026-07-21', '17:00:00', '22:00:00', 'ホール',       NULL, 'scheduled'),
-    (9,  8,  NULL, '2026-07-17', '17:00:00', '21:00:00', 'キッチン',     NULL, 'scheduled'),
+    (9,  8,  NULL, '2026-07-18', '17:00:00', '21:00:00', 'ホール・ドリンク', NULL, 'scheduled'),
     (10, 9,  NULL, '2026-07-17', '19:00:00', '23:00:00', 'ホール',       NULL, 'scheduled'),
     (11, 10, NULL, '2026-07-18', '17:00:00', '22:00:00', 'キッチン',     NULL, 'scheduled'),
     (12, 11, NULL, '2026-07-19', '18:00:00', '22:00:00', 'ホール',       NULL, 'scheduled'),
@@ -112,6 +112,7 @@ INSERT INTO shifts (id, employee_id, manager_user_id, shift_date, start_time, en
 --   通常             → 星野蒼
 --   人員確保優先     → 坂本実南
 --   スキル重視       → 飯島凛
+--   星野理一は19:00〜21:00のみ勤務可能とし、人員確保優先モードでのみ部分カバー候補として出る。
 -- ------------------------------------------------------------
 INSERT INTO availability (employee_id, available_date, start_time, end_time, note, created_by) VALUES
     (1, '2026-07-18', '18:00:00', '22:00:00', NULL, 2),
@@ -121,7 +122,7 @@ INSERT INTO availability (employee_id, available_date, start_time, end_time, not
     (5, '2026-07-17', '17:00:00', '23:00:00', NULL, 6),
     (6, '2026-07-17', '18:00:00', '22:00:00', NULL, 7),
     (7, '2026-07-17', '15:00:00', '23:00:00', NULL, 8),
-    (8, '2026-07-18', '17:00:00', '22:00:00', NULL, 9),
+    (8, '2026-07-17', '19:00:00', '21:00:00', NULL, 9),
     (9, '2026-07-18', '18:00:00', '23:00:00', NULL, 10),
     (10, '2026-07-19', '17:00:00', '22:00:00', NULL, 11),
     (11, '2026-07-20', '18:00:00', '22:00:00', NULL, 12),
