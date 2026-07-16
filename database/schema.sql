@@ -259,43 +259,160 @@ CREATE TABLE IF NOT EXISTS matching_settings (
 -- ------------------------------------------------------------
 -- 既存DBへのカラム追加（マイグレーション）
 --
--- 上記の CREATE TABLE IF NOT EXISTS は、テーブルが既に存在する環境では
--- 何も行わないため、既存DBに対しては以下の ALTER TABLE で
--- 不足しているカラムを追加する。schema.sql を再実行しても安全。
+-- さくらインターネット側のMySQLでは ADD COLUMN IF NOT EXISTS が
+-- 使えない場合があるため、INFORMATION_SCHEMA でカラム有無を確認し、
+-- 不足している場合だけ ALTER TABLE を実行する。
+-- 空DBでは上記 CREATE TABLE で既に作成済みのため、以下は SELECT 1 だけになる。
 -- ------------------------------------------------------------
-ALTER TABLE users
-    ADD COLUMN IF NOT EXISTS email VARCHAR(100) NULL COMMENT 'メールアドレス（店長情報管理用）' AFTER name,
-    ADD COLUMN IF NOT EXISTS phone VARCHAR(50) NULL COMMENT '電話番号（店長情報管理用）' AFTER email,
-    ADD COLUMN IF NOT EXISTS note TEXT NULL COMMENT '備考（店長情報管理用）' AFTER phone;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'email') = 0,
+    'ALTER TABLE users ADD COLUMN email VARCHAR(100) NULL COMMENT ''メールアドレス（店長情報管理用）'' AFTER name',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE employees
-    ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当可能業務・ポジション' AFTER hire_date,
-    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position,
-    ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT '有効フラグ（0=無効化された従業員）' AFTER note;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'phone') = 0,
+    'ALTER TABLE users ADD COLUMN phone VARCHAR(50) NULL COMMENT ''電話番号（店長情報管理用）'' AFTER email',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE availability
-    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER end_time;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'note') = 0,
+    'ALTER TABLE users ADD COLUMN note TEXT NULL COMMENT ''備考（店長情報管理用）'' AFTER phone',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'position') = 0,
+    'ALTER TABLE employees ADD COLUMN position VARCHAR(50) NULL COMMENT ''担当可能業務・ポジション'' AFTER hire_date',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'note') = 0,
+    'ALTER TABLE employees ADD COLUMN note VARCHAR(255) NULL COMMENT ''備考'' AFTER position',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'is_active') = 0,
+    'ALTER TABLE employees ADD COLUMN is_active TINYINT(1) NOT NULL DEFAULT 1 COMMENT ''有効フラグ（0=無効化された従業員）'' AFTER note',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'availability' AND COLUMN_NAME = 'note') = 0,
+    'ALTER TABLE availability ADD COLUMN note VARCHAR(255) NULL COMMENT ''備考'' AFTER end_time',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 ALTER TABLE shifts
-    MODIFY COLUMN employee_id INT NULL COMMENT '担当従業員（店長シフトの場合はNULL）',
-    ADD COLUMN IF NOT EXISTS manager_user_id INT NULL COMMENT '担当店長（users.id、従業員シフトの場合はNULL）' AFTER employee_id,
-    ADD COLUMN IF NOT EXISTS position VARCHAR(50) NULL COMMENT '担当業務・ポジション' AFTER end_time,
-    ADD COLUMN IF NOT EXISTS note VARCHAR(255) NULL COMMENT '備考' AFTER position;
+    MODIFY COLUMN employee_id INT NULL COMMENT '担当従業員（店長シフトの場合はNULL）';
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'shifts' AND COLUMN_NAME = 'manager_user_id') = 0,
+    'ALTER TABLE shifts ADD COLUMN manager_user_id INT NULL COMMENT ''担当店長（users.id、従業員シフトの場合はNULL）'' AFTER employee_id',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'shifts' AND COLUMN_NAME = 'position') = 0,
+    'ALTER TABLE shifts ADD COLUMN position VARCHAR(50) NULL COMMENT ''担当業務・ポジション'' AFTER end_time',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'shifts' AND COLUMN_NAME = 'note') = 0,
+    'ALTER TABLE shifts ADD COLUMN note VARCHAR(255) NULL COMMENT ''備考'' AFTER position',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- ------------------------------------------------------------
 -- 代勤候補抽出・通知作成機能のためのカラム追加（マイグレーション）
 -- ------------------------------------------------------------
-ALTER TABLE substitute_candidates
-    ADD COLUMN IF NOT EXISTS match_score INT NULL COMMENT '候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）' AFTER status,
-    ADD COLUMN IF NOT EXISTS match_reason VARCHAR(255) NULL COMMENT '候補者として抽出された理由' AFTER match_score,
-    ADD COLUMN IF NOT EXISTS matched_at DATETIME NULL COMMENT '候補者として抽出された日時' AFTER match_reason,
-    ADD COLUMN IF NOT EXISTS notified_at DATETIME NULL COMMENT '代勤依頼通知を送信した日時' AFTER matched_at;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'substitute_candidates' AND COLUMN_NAME = 'match_score') = 0,
+    'ALTER TABLE substitute_candidates ADD COLUMN match_score INT NULL COMMENT ''候補者の適合度スコア（抽出モードごとの重み付けで計算。0〜100の相対的な指標）'' AFTER status',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE notifications
-    ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '関連する休み申請（任意、leave_requests.id）' AFTER is_read;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'substitute_candidates' AND COLUMN_NAME = 'match_reason') = 0,
+    'ALTER TABLE substitute_candidates ADD COLUMN match_reason VARCHAR(255) NULL COMMENT ''候補者として抽出された理由'' AFTER match_score',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE notifications
-    ADD COLUMN IF NOT EXISTS is_favorite TINYINT(1) NOT NULL DEFAULT 0 COMMENT 'お気に入り通知フラグ（1: 自動削除しない）' AFTER is_read;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'substitute_candidates' AND COLUMN_NAME = 'matched_at') = 0,
+    'ALTER TABLE substitute_candidates ADD COLUMN matched_at DATETIME NULL COMMENT ''候補者として抽出された日時'' AFTER match_reason',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'substitute_candidates' AND COLUMN_NAME = 'notified_at') = 0,
+    'ALTER TABLE substitute_candidates ADD COLUMN notified_at DATETIME NULL COMMENT ''代勤依頼通知を送信した日時'' AFTER matched_at',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = 'related_leave_request_id') = 0,
+    'ALTER TABLE notifications ADD COLUMN related_leave_request_id INT NULL COMMENT ''関連する休み申請（任意、leave_requests.id）'' AFTER is_read',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'notifications' AND COLUMN_NAME = 'is_favorite') = 0,
+    'ALTER TABLE notifications ADD COLUMN is_favorite TINYINT(1) NOT NULL DEFAULT 0 COMMENT ''お気に入り通知フラグ（1: 自動削除しない）'' AFTER is_read',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 ALTER TABLE leave_requests
     MODIFY COLUMN status ENUM('pending', 'matching', 'approved', 'rejected', 'no_candidate', 'cancelled', 'cancelled_after_approval', 'replacement_pending')
@@ -305,8 +422,14 @@ ALTER TABLE leave_requests
 -- ------------------------------------------------------------
 -- 代勤者による承認後キャンセル機能のための状態追加（マイグレーション）
 -- ------------------------------------------------------------
-ALTER TABLE shifts
-    ADD COLUMN IF NOT EXISTS related_leave_request_id INT NULL COMMENT '手動登録された代勤シフトの関連休み申請ID' AFTER manager_user_id;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'shifts' AND COLUMN_NAME = 'related_leave_request_id') = 0,
+    'ALTER TABLE shifts ADD COLUMN related_leave_request_id INT NULL COMMENT ''手動登録された代勤シフトの関連休み申請ID'' AFTER manager_user_id',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 ALTER TABLE shifts
     MODIFY COLUMN status ENUM('scheduled', 'leave_requested', 'leave_approved', 'substituted', 'cancelled', 'replacement_pending')
@@ -316,11 +439,23 @@ ALTER TABLE shifts
 -- ------------------------------------------------------------
 -- 代勤候補抽出モード機能のためのカラム追加（マイグレーション）
 -- ------------------------------------------------------------
-ALTER TABLE employees
-    ADD COLUMN IF NOT EXISTS skill_level TINYINT(1) NOT NULL DEFAULT 3 COMMENT 'スキルレベル（1:未経験に近い〜5:熟練）' AFTER is_active;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'skill_level') = 0,
+    'ALTER TABLE employees ADD COLUMN skill_level TINYINT(1) NOT NULL DEFAULT 3 COMMENT ''スキルレベル（1:未経験に近い〜5:熟練）'' AFTER is_active',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
-ALTER TABLE leave_requests
-    ADD COLUMN IF NOT EXISTS matching_mode VARCHAR(30) NOT NULL DEFAULT 'normal' COMMENT '候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）' AFTER status;
+SET @sql = IF(
+    (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'leave_requests' AND COLUMN_NAME = 'matching_mode') = 0,
+    'ALTER TABLE leave_requests ADD COLUMN matching_mode VARCHAR(30) NOT NULL DEFAULT ''normal'' COMMENT ''候補抽出時点の抽出モード（normal/staffing_priority/skill_priority）'' AFTER status',
+    'SELECT 1'
+);
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 -- 抽出モードの初期設定（既存DBで未設定の場合のみ追加）
 INSERT INTO matching_settings (setting_key, setting_value)

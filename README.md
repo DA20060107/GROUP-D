@@ -951,7 +951,7 @@ mysql -u root --default-character-set=utf8mb4 < database/schema.sql
 mysql -u root --default-character-set=utf8mb4 < database/seed.sql
 ```
 
-`schema.sql` は `CREATE DATABASE / TABLE IF NOT EXISTS` と `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`（MariaDB対応）で構成されているため、空のDB・既存DBのどちらに対して実行しても安全です。空のDBから `schema.sql` → `seed.sql` を実行すれば、上記デモが動作する初期状態になります。
+`schema.sql` は空DB向けの `CREATE TABLE IF NOT EXISTS` に加えて、既存DB向けには `INFORMATION_SCHEMA` でカラム有無を確認してから不足分だけ `ALTER TABLE ... ADD COLUMN` を実行する構成です。`ADD COLUMN IF NOT EXISTS` を使わないため、さくらインターネット側のMySQLでも実行しやすい形式です。空のDBから `schema.sql` → `seed.sql` を実行すれば、上記デモが動作する初期状態になります。
 
 ## 注意点
 
