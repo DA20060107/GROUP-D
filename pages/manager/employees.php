@@ -109,6 +109,16 @@ $newEmployeeForm = [
 ];
 $positionCheckboxOptions = positionPresetOptions();
 
+/**
+ * 編集フォームの再表示時に、チェックボックスで選ばれたポジションも保持する。
+ */
+function buildEmployeeEditFormValues(array $post, string $position): array
+{
+    $values = $post;
+    $values['position'] = $position;
+    return $values;
+}
+
 // ------------------------------------------------------------
 // POST処理
 // ------------------------------------------------------------
@@ -138,8 +148,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'skill_level' => $skillLevel,
         ];
 
-        if ($name === '' || $username === '' || $password === '') {
-            $errorMessage = '氏名・ログインID・初期パスワードは必須です。';
+        if ($name === '' || $username === '' || $password === '' || $hireDate === '' || $position === '') {
+            $errorMessage = '氏名・ログインID・初期パスワード・入社日・担当可能業務/ポジションは必須です。';
             $initialManagerModalDetail = 'employee-create-form-detail';
             $initialManagerModalTitle = '従業員の新規登録';
         } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
@@ -166,9 +176,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'name'        => $name,
                         'email'       => $email !== '' ? $email : null,
                         'phone'       => $phone !== '' ? $phone : null,
-                        'position'    => $position !== '' ? $position : null,
+                        'position'    => $position,
                         'note'        => $note !== '' ? $note : null,
-                        'hire_date'   => $hireDate !== '' ? $hireDate : null,
+                        'hire_date'   => $hireDate,
                         'skill_level' => (int) $skillLevel,
                     ]);
                     $newEmployeeId = (int) $pdo->lastInsertId();
@@ -220,16 +230,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errorMessage = '指定された従業員が見つかりません。';
         } elseif ($name === '') {
             $errorMessage = '氏名は必須です。';
-            $editEmployee = $_POST;
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
         } elseif ($username === '') {
             $errorMessage = 'ログインIDは必須です。';
-            $editEmployee = $_POST;
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
+        } elseif ($hireDate === '') {
+            $errorMessage = '入社日は必須です。';
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
+        } elseif ($position === '') {
+            $errorMessage = '担当可能業務・ポジションは必須です。';
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
         } elseif (!in_array($skillLevel, ['1', '2', '3', '4', '5'], true)) {
             $errorMessage = 'スキルレベルは1〜5の範囲で指定してください。';
-            $editEmployee = $_POST;
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
         } elseif ($target['user_id'] === null) {
             $errorMessage = '対象従業員のログインアカウントが見つかりません。';
-            $editEmployee = $_POST;
+            $editEmployee = buildEmployeeEditFormValues($_POST, $position);
         } else {
             // パスワードは任意。空欄の場合は現在のパスワードを維持する（トリムしない）
             $newPassword = (string) ($_POST['password'] ?? '');
@@ -250,7 +266,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($stmt->fetch() !== false) {
                 $errorMessage = 'このログインIDは既に使用されています。別のログインIDを指定してください。';
-                $editEmployee = $_POST;
+                $editEmployee = buildEmployeeEditFormValues($_POST, $position);
             } else {
                 try {
                     $pdo->beginTransaction();
@@ -265,8 +281,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         'name'        => $name,
                         'email'       => $email !== '' ? $email : null,
                         'phone'       => $phone !== '' ? $phone : null,
-                        'hire_date'   => $hireDate !== '' ? $hireDate : null,
-                        'position'    => $position !== '' ? $position : null,
+                        'hire_date'   => $hireDate,
+                        'position'    => $position,
                         'note'        => $note !== '' ? $note : null,
                         'skill_level' => (int) $skillLevel,
                         'id'          => $id,
@@ -306,7 +322,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } catch (PDOException $e) {
                     $pdo->rollBack();
                     $errorMessage = '更新に失敗しました。エラー詳細: ' . $e->getMessage();
-                    $editEmployee = $_POST;
+                    $editEmployee = buildEmployeeEditFormValues($_POST, $position);
                 }
             }
         }
@@ -470,7 +486,7 @@ function ef($editEmployee, $key)
         </div>
         <div class="form-group">
             <label for="edit_hire_date">入社日</label>
-            <input type="date" id="edit_hire_date" name="hire_date" value="<?php echo ef($editEmployee, 'hire_date'); ?>">
+            <input type="date" id="edit_hire_date" name="hire_date" value="<?php echo ef($editEmployee, 'hire_date'); ?>" required>
         </div>
         <div class="form-group">
             <label for="edit_position">担当可能業務・ポジション</label>
@@ -630,7 +646,7 @@ function ef($editEmployee, $key)
         </div>
         <div class="form-group">
             <label for="new_hire_date">入社日</label>
-            <input type="date" id="new_hire_date" name="hire_date" value="<?php echo htmlspecialchars($newEmployeeForm['hire_date']); ?>">
+            <input type="date" id="new_hire_date" name="hire_date" value="<?php echo htmlspecialchars($newEmployeeForm['hire_date']); ?>" required>
         </div>
         <div class="form-group">
             <label for="new_skill_level">スキルレベル</label>

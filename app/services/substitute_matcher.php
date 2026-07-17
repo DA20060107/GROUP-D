@@ -149,7 +149,7 @@ function scorePositionMatch(?string $candidatePosition, ?string $shiftPosition):
     $requiredItems  = parsePositionItems($shiftPosition);
 
     if (empty($candidateItems) || empty($requiredItems)) {
-        return ['score' => 50, 'label' => 'ポジション情報なし'];
+        return ['score' => 0, 'label' => 'ポジション情報なし'];
     }
     if (positionCandidateCoversAll($candidateItems, $requiredItems)) {
         return ['score' => 100, 'label' => '必要ポジション対応可'];
@@ -173,7 +173,7 @@ function scoreSkillLevel(int $skillLevel): array
 function scoreTenure(?string $hireDate, string $referenceDate): array
 {
     if ($hireDate === null || $hireDate === '') {
-        return ['score' => 50, 'label' => '勤続情報なし'];
+        return ['score' => 0, 'label' => '勤続情報なし'];
     }
 
     $days = (strtotime($referenceDate) - strtotime($hireDate)) / 86400;
