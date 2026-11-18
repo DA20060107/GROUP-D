@@ -46,8 +46,8 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- employees: 従業員13名
 --
 -- 2026-07-17 18:00〜22:00 のLOVOTのシフトを休み申請デモ対象にする。
--- 小室・渡辺・塚本は全モードで先に通知される3人。
--- 4人目は、通常=星野蒼 / 人員確保優先=坂本実南 / スキル重視=飯島凛 になるよう調整。
+-- UserA・UserB・UserCは全モードで先に通知される3人。
+-- 4人目は、通常=UserD / 人員確保優先=UserE / スキル重視=UserF になるよう調整。
 -- ------------------------------------------------------------
 INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_active, skill_level) VALUES
     (1,  'LOVOT',    'lovot@example.com',          '090-1000-0001', '2026-04-01', 'ホール',          NULL, 1, 3),
@@ -71,18 +71,18 @@ INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_act
 INSERT INTO users (id, username, password, role, employee_id, name, email, phone, note) VALUES
     (1,  'manager01',  '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'manager',  NULL, '小笠原秀人', 'ogasawara@example.com', '090-2000-0001', NULL),
     (2,  'employee01', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 1,  'LOVOT',    'lovot@example.com',          '090-1000-0001', NULL),
-    (3,  'employee02', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 2,  '小室佑太', 'komuro@example.com',         '090-1000-0002', NULL),
-    (4,  'employee03', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 3,  '渡辺大智', 'watanabe@example.com',       '090-1000-0003', NULL),
-    (5,  'employee04', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 4,  '塚本恭平', 'tsukamoto@example.com',      '090-1000-0004', NULL),
-    (6,  'employee05', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 5,  '星野蒼',   'hoshino-ao@example.com',     '090-1000-0005', NULL),
-    (7,  'employee06', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 6,  '坂本実南', 'sakamoto@example.com',       '090-1000-0006', NULL),
-    (8,  'employee07', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 7,  '飯島凛',   'iijima@example.com',         '090-1000-0007', NULL),
-    (9,  'employee08', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 8,  '星野理一', 'hoshino-riichi@example.com', '090-1000-0008', NULL),
-    (10, 'employee09', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 9,  '石井颯斗', 'ishii@example.com',          '090-1000-0009', NULL),
-    (11, 'employee10', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 10, '陶修斗',   'sue@example.com',            '090-1000-0010', NULL),
-    (12, 'employee11', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 11, '吉田隆人', 'yoshida@example.com',        '090-1000-0011', NULL),
-    (13, 'employee12', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 12, '川口将英', 'kawaguchi@example.com',      '090-1000-0012', NULL),
-    (14, 'employee13', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 13, '高木悠希', 'takagi@example.com',         '090-1000-0013', NULL);
+    (3,  'employee02', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 2,  'UserA', 'komuro@example.com',         '090-1000-0002', NULL),
+    (4,  'employee03', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 3,  'UserB', 'watanabe@example.com',       '090-1000-0003', NULL),
+    (5,  'employee04', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 4,  'UserC', 'tsukamoto@example.com',      '090-1000-0004', NULL),
+    (6,  'employee05', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 5,  'UserD',   'hoshino-ao@example.com',     '090-1000-0005', NULL),
+    (7,  'employee06', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 6,  'UserE', 'sakamoto@example.com',       '090-1000-0006', NULL),
+    (8,  'employee07', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 7,  'UserF',   'iijima@example.com',         '090-1000-0007', NULL),
+    (9,  'employee08', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 8,  'UserG', 'hoshino-riichi@example.com', '090-1000-0008', NULL),
+    (10, 'employee09', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 9,  'UserH', 'ishii@example.com',          '090-1000-0009', NULL),
+    (11, 'employee10', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 10, 'UserI',   'sue@example.com',            '090-1000-0010', NULL),
+    (12, 'employee11', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 11, 'UserJ', 'yoshida@example.com',        '090-1000-0011', NULL),
+    (13, 'employee12', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 12, 'UserK', 'kawaguchi@example.com',      '090-1000-0012', NULL),
+    (14, 'employee13', '$2y$10$CodCQT14oTcpbii157lnzeluXz3srq4Wyhvx8Tz68GO8r94y/kGJW', 'employee', 13, 'UserL', 'takagi@example.com',         '090-1000-0013', NULL);
 
 -- ------------------------------------------------------------
 -- shifts: シフト
@@ -107,12 +107,12 @@ INSERT INTO shifts (id, employee_id, manager_user_id, shift_date, start_time, en
 -- availability: LOVOTの代勤候補抽出用勤務可能日
 --
 -- 対象シフト: 2026-07-17 18:00〜22:00 / ホール
--- 先に通知される3人: 小室佑太・渡辺大智・塚本恭平
+-- 先に通知される3人: UserA・UserB・UserC
 -- 次点候補:
---   通常             → 星野蒼
---   人員確保優先     → 坂本実南
---   スキル重視       → 飯島凛
---   星野理一は19:00〜21:00のみ勤務可能とし、人員確保優先モードでのみ部分カバー候補として出る。
+--   通常             → UserD
+--   人員確保優先     → UserE
+--   スキル重視       → UserF
+--   UserGは19:00〜21:00のみ勤務可能とし、人員確保優先モードでのみ部分カバー候補として出る。
 -- ------------------------------------------------------------
 INSERT INTO availability (employee_id, available_date, start_time, end_time, note, created_by) VALUES
     (1, '2026-07-18', '18:00:00', '22:00:00', NULL, 2),
