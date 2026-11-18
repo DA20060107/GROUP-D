@@ -1,4 +1,9 @@
 # シフト代勤マッチング支援システム
+## 
+- **システムURL**：https://sel.jpn.org/citweb/2026-TeamD/public/
+- **テスト用アカウント**
+  - 店長ログイン：ID `manager01` / パスワード `a`
+  - 従業員ログイン：ID `employee03` / パスワード `a`
 
 ## 概要
 
