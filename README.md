@@ -105,28 +105,6 @@ mysql -u root --default-character-set=utf8mb4 < database/seed.sql
 phpMyAdminを使う場合は、「SQL」タブに各ファイルの内容を貼り付けて実行してください。
 **`schema.sql` → `seed.sql` の順に実行してください。**
 
-## テスト用ログイン情報
-
-`seed.sql` 投入後、以下のユーザーでログインできます。
-パスワードは全ユーザー共通で `a`（開発用、`password_hash()` でハッシュ化して保存済み）です。
-
-| ユーザーID | パスワード | role | 表示名 | ログイン後の遷移先 |
-|---|---|---|---|---|
-| manager01  | a | manager  | 小笠原秀人 | `pages/manager/menu.php`（店長メニュー） |
-| employee01 | a | employee | LOVOT | `pages/employee/menu.php`（従業員メニュー） |
-| employee02 | a | employee | UserA | `pages/employee/menu.php`（従業員メニュー） |
-| employee03 | a | employee | UserB | `pages/employee/menu.php`（従業員メニュー） |
-| employee04 | a | employee | UserC | `pages/employee/menu.php`（従業員メニュー） |
-| employee05 | a | employee | UserD | `pages/employee/menu.php`（従業員メニュー） |
-| employee06 | a | employee | UserE | `pages/employee/menu.php`（従業員メニュー） |
-| employee07 | a | employee | UserF | `pages/employee/menu.php`（従業員メニュー） |
-| employee08 | a | employee | UserG | `pages/employee/menu.php`（従業員メニュー） |
-| employee09 | a | employee | UserH | `pages/employee/menu.php`（従業員メニュー） |
-| employee10 | a | employee | UserI | `pages/employee/menu.php`（従業員メニュー） |
-| employee11 | a | employee | UserJ | `pages/employee/menu.php`（従業員メニュー） |
-| employee12 | a | employee | UserK | `pages/employee/menu.php`（従業員メニュー） |
-| employee13 | a | employee | UserL | `pages/employee/menu.php`（従業員メニュー） |
-
 ## 状態一覧
 
 休み申請・代勤候補・シフト・キャンセル申請・通知には、それぞれ複数の状態（status）があります。
