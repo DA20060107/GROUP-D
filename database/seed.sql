@@ -51,18 +51,18 @@ SET FOREIGN_KEY_CHECKS = 1;
 -- ------------------------------------------------------------
 INSERT INTO employees (id, name, email, phone, hire_date, position, note, is_active, skill_level) VALUES
     (1,  'LOVOT',    'lovot@example.com',          '090-1000-0001', '2026-04-01', 'ホール',          NULL, 1, 3),
-    (2,  '小室佑太', 'komuro@example.com',         '090-1000-0002', '2024-04-01', 'ホール',          NULL, 1, 5),
-    (3,  '渡辺大智', 'watanabe@example.com',       '090-1000-0003', '2024-04-01', 'ホール',          NULL, 1, 5),
-    (4,  '塚本恭平', 'tsukamoto@example.com',      '090-1000-0004', '2024-04-01', 'ホール',          NULL, 1, 5),
-    (5,  '星野蒼',   'hoshino-ao@example.com',     '090-1000-0005', '2024-01-01', 'ホール・キッチン', NULL, 1, 3),
-    (6,  '坂本実南', 'sakamoto@example.com',       '090-1000-0006', '2026-06-01', 'ホール',          NULL, 1, 3),
-    (7,  '飯島凛',   'iijima@example.com',         '090-1000-0007', '2026-06-01', 'ホール',          NULL, 1, 5),
-    (8,  '星野理一', 'hoshino-riichi@example.com', '090-1000-0008', '2025-04-01', 'ホール・ドリンク', NULL, 1, 3),
-    (9,  '石井颯斗', 'ishii@example.com',          '090-1000-0009', '2025-05-01', 'ホール・ドリンク',   NULL, 1, 3),
-    (10, '陶修斗',   'sue@example.com',            '090-1000-0010', '2025-06-01', 'キッチン・洗い場',   NULL, 1, 2),
-    (11, '吉田隆人', 'yoshida@example.com',        '090-1000-0011', '2025-07-01', 'ホール・洗い場',     NULL, 1, 3),
-    (12, '川口将英', 'kawaguchi@example.com',      '090-1000-0012', '2025-08-01', 'ホール・レジ・ドリンク', NULL, 1, 4),
-    (13, '高木悠希', 'takagi@example.com',         '090-1000-0013', '2025-09-01', 'キッチン・洗い場',   NULL, 1, 3);
+    (2,  'UserA', 'komuro@example.com',         '090-1000-0002', '2024-04-01', 'ホール',          NULL, 1, 5),
+    (3,  'UserB', 'watanabe@example.com',       '090-1000-0003', '2024-04-01', 'ホール',          NULL, 1, 5),
+    (4,  'UserC', 'tsukamoto@example.com',      '090-1000-0004', '2024-04-01', 'ホール',          NULL, 1, 5),
+    (5,  'UserD',   'hoshino-ao@example.com',     '090-1000-0005', '2024-01-01', 'ホール・キッチン', NULL, 1, 3),
+    (6,  'UserE', 'sakamoto@example.com',       '090-1000-0006', '2026-06-01', 'ホール',          NULL, 1, 3),
+    (7,  'UserF',   'iijima@example.com',         '090-1000-0007', '2026-06-01', 'ホール',          NULL, 1, 5),
+    (8,  'UserG', 'hoshino-riichi@example.com', '090-1000-0008', '2025-04-01', 'ホール・ドリンク', NULL, 1, 3),
+    (9,  'UserH', 'ishii@example.com',          '090-1000-0009', '2025-05-01', 'ホール・ドリンク',   NULL, 1, 3),
+    (10, 'UserI,   'sue@example.com',            '090-1000-0010', '2025-06-01', 'キッチン・洗い場',   NULL, 1, 2),
+    (11, 'UserJ', 'yoshida@example.com',        '090-1000-0011', '2025-07-01', 'ホール・洗い場',     NULL, 1, 3),
+    (12, 'UserK', 'kawaguchi@example.com',      '090-1000-0012', '2025-08-01', 'ホール・レジ・ドリンク', NULL, 1, 4),
+    (13, 'UserL', 'takagi@example.com',         '090-1000-0013', '2025-09-01', 'キッチン・洗い場',   NULL, 1, 3);
 
 -- ------------------------------------------------------------
 -- users: 店長1名 + 従業員13名
