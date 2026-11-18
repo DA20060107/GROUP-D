@@ -109,18 +109,18 @@ phpMyAdminを使う場合は、「SQL」タブに各ファイルの内容を貼�
 |---|---|---|---|---|
 | manager01  | a | manager  | 小笠原秀人 | `pages/manager/menu.php`（店長メニュー） |
 | employee01 | a | employee | LOVOT | `pages/employee/menu.php`（従業員メニュー） |
-| employee02 | a | employee | 小室佑太 | `pages/employee/menu.php`（従業員メニュー） |
-| employee03 | a | employee | 渡辺大智 | `pages/employee/menu.php`（従業員メニュー） |
-| employee04 | a | employee | 塚本恭平 | `pages/employee/menu.php`（従業員メニュー） |
-| employee05 | a | employee | 星野蒼 | `pages/employee/menu.php`（従業員メニュー） |
-| employee06 | a | employee | 坂本実南 | `pages/employee/menu.php`（従業員メニュー） |
-| employee07 | a | employee | 飯島凛 | `pages/employee/menu.php`（従業員メニュー） |
-| employee08 | a | employee | 星野理一 | `pages/employee/menu.php`（従業員メニュー） |
-| employee09 | a | employee | 石井颯斗 | `pages/employee/menu.php`（従業員メニュー） |
-| employee10 | a | employee | 陶修斗 | `pages/employee/menu.php`（従業員メニュー） |
-| employee11 | a | employee | 吉田隆人 | `pages/employee/menu.php`（従業員メニュー） |
-| employee12 | a | employee | 川口将英 | `pages/employee/menu.php`（従業員メニュー） |
-| employee13 | a | employee | 高木悠希 | `pages/employee/menu.php`（従業員メニュー） |
+| employee02 | a | employee | UserA | `pages/employee/menu.php`（従業員メニュー） |
+| employee03 | a | employee | UserB | `pages/employee/menu.php`（従業員メニュー） |
+| employee04 | a | employee | UserC | `pages/employee/menu.php`（従業員メニュー） |
+| employee05 | a | employee | UserD | `pages/employee/menu.php`（従業員メニュー） |
+| employee06 | a | employee | UserE | `pages/employee/menu.php`（従業員メニュー） |
+| employee07 | a | employee | UserF | `pages/employee/menu.php`（従業員メニュー） |
+| employee08 | a | employee | UserG | `pages/employee/menu.php`（従業員メニュー） |
+| employee09 | a | employee | UserH | `pages/employee/menu.php`（従業員メニュー） |
+| employee10 | a | employee | UserI | `pages/employee/menu.php`（従業員メニュー） |
+| employee11 | a | employee | UserJ | `pages/employee/menu.php`（従業員メニュー） |
+| employee12 | a | employee | UserK | `pages/employee/menu.php`（従業員メニュー） |
+| employee13 | a | employee | UserL | `pages/employee/menu.php`（従業員メニュー） |
 
 ## 状態一覧
 
